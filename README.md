@@ -5,9 +5,9 @@ These resource are used as the principal data for games and other tools.
 The source files are design for command-line tool that can be used to generate resources.
 
 # Key Concepts
-* [Terminology](Documentation/Terminology.md)
-* [Folder organization](Documentation/FolderOrganization.md)
-* [Command line parameters](Documentation/CommadLineParameters.md)
+* [Terminology](documentation/Terminology.md)
+* [Folder organization](documentation/FolderOrganization.md)
+* [Command line parameters](documentation/CommadLineParameters.md)
 
 # Key features
 * License MIT
