@@ -35,8 +35,8 @@ rem ------------------------------------------------------------
 rem XPROPERTY
 rem ------------------------------------------------------------
 :XPROPERTY
-rmdir "../dependencies/xproperties" /S /Q
-git clone https://gitlab.com/LIONant/xproperty.git "../dependencies/xproperty"
+rmdir "../dependencies/xproperty" /S /Q
+git clone https://github.com/LIONant-depot/xproperty.git "../dependencies/xproperty"
 if %ERRORLEVEL% GEQ 1 goto :ERROR
 
 rem ------------------------------------------------------------
