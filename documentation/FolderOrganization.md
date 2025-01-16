@@ -110,18 +110,29 @@ Project/
     │   │   │   │   └── Icon.dds
     │   │   │   └── ...
     │   │   └── ...
-    │   ├── f0/ 
-    │   │   ├── fa/ 
-    │   │   │   ├── e01ffaf0.desc
-    │   │   │   │   ├── Info.txt
-    │   │   │   │   ├── Descriptor.txt
-    │   │   │   │   └── Icon.dds
-    │   │   │   └── ...
-    │   │   └── ...
-    └── mesh/ 
-        ├── 00/ 
-        ├── 01/ 
-        └── ... 
+    │   └── f0/ 
+    │       ├── fa/ 
+    │       │   ├── e01ffaf0.desc
+    │       │   │   ├── Info.txt
+    │       │   │   ├── Descriptor.txt
+    │       │   │   └── Icon.dds
+    │       │   └── ...
+    │       └── ...
+    ├── mesh/ 
+    │   ├── 00/ 
+    │   ├── 01/ 
+    │   └── ... 
+    │   
+    └── Scene/ 
+        └── f0/ 
+            ├── fa/ 
+            │   ├── e01ffaf0.desc
+            │   │   ├── Info.txt
+            │   │   ├── Descriptor.txt
+            │   │   ├── Icon.dds
+            │   │   └── Entities/...
+            │   └── ...
+            └── ...
 ```
 
 * `Info.txt` <a id="Project/Descriptors/Info.txt"></a>
