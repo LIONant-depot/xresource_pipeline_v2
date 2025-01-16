@@ -3,9 +3,9 @@ namespace xresource_pipeline::compiler
     //
     // Command line arguments
     // ---------------------
-    // -OPTIMIZATION    O1              // Optional
-    // -DEBUG           D1              // Optional
-    // -TARGET          WINDOWS         
+    // -OPTIMIZATION    O1                                  // Optional
+    // -DEBUG           D1                                  // Optional
+    // -TARGET          WINDOWS                             // Optional
     // -PROJECT         "C:\SomeFolder\MyProject.lion" 
     // -DESCRIPTOR      "Texture\00\faff00.desc"
     // -OUTPUT          "C:\SomeFolder\MyProject.lion\Temp\Resources\Build"
@@ -19,13 +19,13 @@ namespace xresource_pipeline::compiler
         enum class optimization_type
         { INVALID
         , O0                // Compiles the asset as fast as possible no real optimization
-        , O1                // Build with optimizations
+        , O1                // (Default) Build with optimizations
         , Oz                // Take all the time you like to optimize this resource
         };
 
         enum class debug_type
         { INVALID
-        , D0                // Compiles with some debug
+        , D0                // (Default) Compiles with some debug
         , D1                // Compiles with extra debug information
         , Dz                // Runs the debug version of the compiler and such... max debug level
         };
