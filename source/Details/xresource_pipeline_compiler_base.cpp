@@ -34,13 +34,16 @@ void LogFunction( const xcore::log::channel& Channel, xcore::log::msg_type Type,
     }
     std::fflush(stdout);
 
-    if( false == g_pBase->m_LogFile.isOpen() ) 
+    if( g_pBase->m_LogFile.isOpen() ) 
     {
         if( auto Err = g_pBase->m_LogFile.Printf( Message.data() ); Err )
         {
             printf( "Fail to save data in log\n" );
             Err.clear();
         }
+
+        // Make sure things are written in time...
+        g_pBase->m_LogFile.Flush();
     }
 }
 
