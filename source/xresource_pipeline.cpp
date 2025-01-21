@@ -12,7 +12,7 @@ void displayProgressBar(const char* pTitle, float progress) noexcept
     const auto     filled = total_chars_v - pos;
     const auto     empty = total_chars_v - (bar_width - pos);
 
-    printf("\r%s: [%s>%s] %3d%%", pTitle, &fill_progress[filled], &empty_progress[empty], static_cast<int>(progress * 100.0));
+    printf("\r[Info] %s: [%s>%s] %3d%%", pTitle, &fill_progress[filled], &empty_progress[empty], static_cast<int>(progress * 100.0));
     std::cout.flush();
 }
 

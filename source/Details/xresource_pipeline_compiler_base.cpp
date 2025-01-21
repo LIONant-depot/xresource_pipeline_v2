@@ -19,7 +19,19 @@ void LogFunction( const xcore::log::channel& Channel, xcore::log::msg_type Type,
     , pString ? pString : "Unkown" 
     );
 
-    printf( Message.data() );
+    if (g_pBase->m_DebugType == base::debug_type::Dz)
+    {
+        printf(Message.data());
+    }
+    else
+    {
+        auto SimpleMessage = xcore::string::Fmt
+        ("[%s] %s\n"
+        , xcore::log::msg_type::L_INFO == Type ? "Info" : xcore::log::msg_type::L_WARNING == Type ? "Warning" : "Error"
+        , pString ? pString : "Unkown"
+        );
+        printf(SimpleMessage.data());
+    }
     std::fflush(stdout);
 
     if( false == g_pBase->m_LogFile.isOpen() ) 
@@ -128,16 +140,35 @@ xcore::err base::setupPaths( void ) noexcept
     //
     // Set all the core directories
     //
-    m_ProjectPaths.m_Descriptors        = xcore::string::Fmt("%s/Descriptors",  m_ProjectPaths.m_Project.data() );
-    m_ProjectPaths.m_Config             = xcore::string::Fmt("%s/Config",       m_ProjectPaths.m_Project.data() );
-    m_ProjectPaths.m_Assets             = xcore::string::Fmt("%s/Assets",       m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_Cache              = xcore::string::Fmt("%s/Cache",        m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_CacheTemp          = xcore::string::Fmt("%s/Temp",         m_ProjectPaths.m_Cache.data());
-    m_ProjectPaths.m_CachedDescriptors  = xcore::string::Fmt("%s/Descriptors",  m_ProjectPaths.m_Cache.data());
-    m_ProjectPaths.m_Resources          = xcore::string::Fmt("%s/Resources",    m_ProjectPaths.m_Cache.data());
-    m_ProjectPaths.m_ResourcesPlatforms = xcore::string::Fmt("%s/Platforms",    m_ProjectPaths.m_Resources.data());
-    m_ProjectPaths.m_ResourcesLogs      = xcore::string::Fmt("%s/Logs",         m_ProjectPaths.m_Resources.data());
+    m_ProjectPaths.m_Descriptors = xcore::string::Fmt("%s/Descriptors", m_ProjectPaths.m_Project.data());
+    m_ProjectPaths.m_Config = xcore::string::Fmt("%s/Config", m_ProjectPaths.m_Project.data());
+    m_ProjectPaths.m_Assets = xcore::string::Fmt("%s/Assets", m_ProjectPaths.m_Project.data());
+    m_ProjectPaths.m_Cache = xcore::string::Fmt("%s/Cache", m_ProjectPaths.m_Project.data());
+    m_ProjectPaths.m_CacheTemp = xcore::string::Fmt("%s/Temp", m_ProjectPaths.m_Cache.data());
+    m_ProjectPaths.m_CachedDescriptors = xcore::string::Fmt("%s/Descriptors", m_ProjectPaths.m_Cache.data());
+    m_ProjectPaths.m_Resources = xcore::string::Fmt("%s/Resources", m_ProjectPaths.m_Cache.data());
+    m_ProjectPaths.m_ResourcesPlatforms = xcore::string::Fmt("%s/Platforms", m_ProjectPaths.m_Resources.data());
+    m_ProjectPaths.m_ResourcesLogs = xcore::string::Fmt("%s/Logs", m_ProjectPaths.m_Resources.data());
 
+    //
+    // Set up the path required for this complilation
+    //
+    m_ResourceLogPath = xcore::string::Fmt("%s/%s.log"
+        , m_ProjectPaths.m_ResourcesLogs.data()
+        , m_ResourcePartialPath.data()
+    );
+
+    // Make sure the log path is ready
+    if (auto Err = base::CreatePath(m_ResourceLogPath); Err)
+        return Err;
+
+    // Open the log file
+    if (auto Err = m_LogFile.open(xcore::string::To<wchar_t>(xcore::string::Fmt("%s/Log.txt", m_ResourceLogPath.data())), "wt"); Err)
+        return xerr_failure_s("Fail to create the log file");
+
+    //
+    // Make sure all the required directories are created
+    //
     if (auto Err = base::CreatePath(m_ProjectPaths.m_Cache); Err) return Err;
     if (auto Err = base::CreatePath(m_ProjectPaths.m_CacheTemp); Err) return Err;
     if (auto Err = base::CreatePath(m_ProjectPaths.m_CachedDescriptors); Err) return Err;
@@ -182,22 +213,6 @@ xcore::err base::setupPaths( void ) noexcept
             }
         }
     }
-
-    //
-    // Set up the path required for this complilation
-    //
-    m_ResourceLogPath = xcore::string::Fmt("%s/%s.log"
-        , m_ProjectPaths.m_ResourcesLogs.data()
-        , m_ResourcePartialPath.data()
-        );
-
-    // Make sure the log path is ready
-    if (auto Err = base::CreatePath(m_ResourceLogPath); Err)
-        return Err;
-
-    // Open the log file
-    if( auto Err = m_LogFile.open( xcore::string::To<wchar_t>(xcore::string::Fmt( "%s/Log.txt", m_ResourceLogPath.data() )), "wt"); Err )
-        return xerr_failure_s("Fail to create the log file");
 
     return {};
 }
@@ -342,12 +357,12 @@ xcore::err base::InternalParse( const int argc, const char *argv[] ) noexcept
                 return xerr_failure_s("Optimization Type not supported");
             }
         }
-        else if( CmdCRC == xcore::types::value<xcore::crc<32>::FromString( "DEBUG" )> )
+        else if( auto crc = xcore::types::value<xcore::crc<32>::FromString("DEBUG")>; CmdCRC == crc )
         {
             xcore::cstring BuildType;
 
             xcore::string::Copy( BuildType, Cmd.getArgument( 0 ) );
-            
+
             if( BuildType == xcore::string::constant("D0") )
             {
                 m_DebugType = debug_type::D0;
@@ -380,8 +395,35 @@ xcore::err base::InternalParse( const int argc, const char *argv[] ) noexcept
     //
     // Logs data base
     //
-    if( auto Err = setupPaths(); Err )
+    if (auto Err = setupPaths(); Err)
         return Err;
+
+    //
+    // Let the user know about the command line options
+    //
+    if (m_DebugType == debug_type::D1 || m_DebugType == debug_type::Dz)
+    {
+        XLOG_CHANNEL_INFO(m_LogChannel, "Compiler command line options");
+        XLOG_CHANNEL_INFO(m_LogChannel, "PROJECT: %s", m_ProjectPaths.m_Project.c_str());
+
+        {
+            std::string TargetString;
+            for (auto& E : m_Target)
+            {
+                if (E.m_bValid)
+                {
+                    TargetString += xcore::target::getPlatformString(E.m_Platform);
+                    TargetString += " ";
+                }
+            }
+            XLOG_CHANNEL_INFO(m_LogChannel, "TARGETS: %s", TargetString.c_str() );
+        }
+
+        XLOG_CHANNEL_INFO(m_LogChannel, "OUTPUT: %s", m_ProjectPaths.m_Output.c_str());
+        XLOG_CHANNEL_INFO(m_LogChannel, "DESCRIPTOR: %s", m_InputSrcDescriptorPath.c_str());
+        XLOG_CHANNEL_INFO(m_LogChannel, "OPTIMIZATION: %s", m_OptimizationType == optimization_type::O0 ? "O0" : m_OptimizationType == optimization_type::O1 ? "O1" : "Oz");
+        XLOG_CHANNEL_INFO(m_LogChannel, "DEBUG: %s", m_DebugType == debug_type::D0 ? "D0" : m_DebugType == debug_type::D1 ? "D1" : "Dz");
+    }
 
     return {};
 }
@@ -502,7 +544,6 @@ xcore::err base::Compile( void ) noexcept
         //
         // Get the timer
         //
-        if( m_LogFile.isOpen() )
         {
             XLOG_CHANNEL_INFO(m_LogChannel, "------------------------------------------------------------------");
             XLOG_CHANNEL_INFO(m_LogChannel, " Start Compilation" );
@@ -524,19 +565,19 @@ xcore::err base::Compile( void ) noexcept
         //
         // Get the timer
         //
-        if( m_LogFile.isOpen() )
         {
             XLOG_CHANNEL_INFO(m_LogChannel, "------------------------------------------------------------------");
-            XLOG_CHANNEL_INFO(m_LogChannel, " Compilation Time: %fs", std::chrono::duration<float>(std::chrono::steady_clock::now() - m_Timmer).count());
+            XLOG_CHANNEL_INFO(m_LogChannel, " Compilation Time: %.3fs", std::chrono::duration<float>(std::chrono::steady_clock::now() - m_Timmer).count());
             XLOG_CHANNEL_INFO(m_LogChannel, "------------------------------------------------------------------");
         }
     }
     catch (std::runtime_error RunTimeError)
     {
-        XLOG_CHANNEL_ERROR(m_LogChannel, "Fail to create the log file [%s]", RunTimeError.what() );
-        return xerr_failure_s("exception thrown exiting...");
+        XLOG_CHANNEL_ERROR(m_LogChannel, "%s", RunTimeError.what() );
+        return xerr_failure_s("FAILED: exception thrown exiting...");
     }
 
+    printf("[COMPILATION_SUCCESS]\n");
     return {};
 }
 
