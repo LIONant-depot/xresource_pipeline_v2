@@ -19,8 +19,8 @@ namespace xresource_pipeline
 
         XPROPERTY_DEF
         ("version", version, xproperty::settings::vector2_group
-            , obj_member_ro< "M", &version::m_Major >
-            , obj_member_ro< "m", &version::m_Minor >
+            , obj_member_ro< "Major", &version::m_Major >
+            , obj_member_ro< "minor", &version::m_Minor >
         )
     };
     XPROPERTY_REG(version)
