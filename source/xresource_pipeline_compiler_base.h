@@ -59,6 +59,7 @@ namespace xresource_pipeline::compiler
 
                             xcore::err                  Compile                     ( void )                                                        noexcept;
                             xcore::err                  Parse                       ( int argc, const char* argv[] )                                noexcept;
+                            void                        displayProgressBar          (const char* pTitle, float progress)                    const   noexcept;
 
     protected:
         
@@ -69,7 +70,6 @@ namespace xresource_pipeline::compiler
         virtual             xcore::err                  onCompile                   ( void )                                                        noexcept = 0;
                             xcore::err                  setupPaths                  ( void )                                                        noexcept;
                             xcore::err                  CreatePath                  ( const xcore::cstring& Path )                          const   noexcept;
-
     protected:
         
         debug_type                                              m_DebugType                 { debug_type::D0 };
@@ -87,22 +87,6 @@ namespace xresource_pipeline::compiler
         xcore::cstring                                          m_ResourceLogPath           {};
         xcore::file::stream                                     m_LogFile                   {};
 
-/*
-        xcore::cstring                                          m_OutputRootPath            {};
-        xcore::cstring                                          m_OutputProjectPath         {};
-        xcore::cstring                                          m_CompilerConfigPath        {};
-        xcore::cstring                                          m_CompilerConfigPathFile    {};
-
-        xcore::cstring                                          m_ProjectConfigPath         {};
-
-        xcore::cstring                                          m_ResourcePath              {}; // Path to the asset 
-        xcore::cstring                                          m_ResourceDescriptorPathFile{}; // Path to the asset 
-
-
-        xcore::cstring                                          m_GeneratedPath             {};
-
-        xcore::cstring                                          m_BrowserPath               {};        
-*/
         std::array<platform, xcore::target::getPlatformCount()> m_Target                    {};
 
         xcore::log::channel                                     m_LogChannel                { "COMPILER" };     // Use this to emmit your errors/warnnings or information...

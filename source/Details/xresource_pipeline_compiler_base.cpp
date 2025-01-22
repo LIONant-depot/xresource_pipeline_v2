@@ -9,34 +9,53 @@ base* g_pBase = nullptr;
 
 void LogFunction( const xcore::log::channel& Channel, xcore::log::msg_type Type, const char* pString, int Line, const char* file ) noexcept
 {
-    auto Message = xcore::string::Fmt
-    ( "%s(%d) [%s] %s\n"
-    , file ? file : "Unkown file"
-    , Line
-    , xcore::log::msg_type::L_INFO    == Type ? "Info"
-    : xcore::log::msg_type::L_WARNING == Type ? "Warning"
-    :                                           "Error"
-    , pString ? pString : "Unkown" 
-    );
+    if (pString == nullptr) pString = "Unkown";
 
-    if (g_pBase->m_DebugType == base::debug_type::Dz)
+    //
+    // Print to the standard output
+    //
     {
-        printf(Message.data());
-    }
-    else
-    {
-        auto SimpleMessage = xcore::string::Fmt
-        ("[%s] %s\n"
-        , xcore::log::msg_type::L_INFO == Type ? "Info" : xcore::log::msg_type::L_WARNING == Type ? "Warning" : "Error"
-        , pString ? pString : "Unkown"
-        );
-        printf(SimpleMessage.data());
-    }
-    std::fflush(stdout);
+        static bool bPendingNewLine = false;
+        if (pString[0] == '\r')
+        {
+            printf
+            ("\r[%s] %s"
+            , xcore::log::msg_type::L_INFO == Type ? "Info" : xcore::log::msg_type::L_WARNING == Type ? "Warning" : "Error"
+            , &pString[1]
+            );
+            bPendingNewLine = true;
+        }
+        else
+        {
+            // In case of surprised warning or errors while doing pertentages we need to make sure we print a new line
+            if (bPendingNewLine) printf("\n");
+            bPendingNewLine = false;
 
+            printf
+            ("[%s] %s\n"
+            , xcore::log::msg_type::L_INFO == Type ? "Info" : xcore::log::msg_type::L_WARNING == Type ? "Warning" : "Error"
+            , pString
+            );
+        }
+
+        // Make sure we always print the message
+        std::fflush(stdout);
+    }
+
+    //
+    // Save to the log file
+    //
     if( g_pBase->m_LogFile.isOpen() ) 
     {
-        if( auto Err = g_pBase->m_LogFile.Printf( Message.data() ); Err )
+        if( auto Err = g_pBase->m_LogFile.Printf
+            ( "%s(%d) [%s] %s\n"
+            , file ? file : "Unkown file"
+            , Line
+            , xcore::log::msg_type::L_INFO == Type ? "Info"
+            : xcore::log::msg_type::L_WARNING == Type ? "Warning"
+            : "Error"
+            , pString[0] == '\r' ? &pString[1] : pString
+            ); Err )
         {
             printf( "Fail to save data in log\n" );
             Err.clear();
@@ -480,6 +499,23 @@ xcore::err base::CreatePath( const xcore::cstring& Path ) const noexcept
 
     return {};
 }
+
+//--------------------------------------------------------------------------
+
+void base::displayProgressBar(const char* pTitle, float progress) const noexcept
+{
+    progress = std::clamp(progress, 0.0f, 1.0f);
+    constexpr auto total_chars_v = 40;
+    constexpr auto fill_progress = "========================================";
+    constexpr auto empty_progress = "                                        ";
+    constexpr auto bar_width = 35;
+    const auto     pos = static_cast<int>(bar_width * progress);
+    const auto     filled = total_chars_v - pos;
+    const auto     empty = total_chars_v - (bar_width - pos);
+
+    XLOG_CHANNEL_INFO(m_LogChannel, "\r%s: [%s>%s] %3d%%", pTitle, &fill_progress[filled], &empty_progress[empty], static_cast<int>(progress * 100.0));
+}
+
 
 //--------------------------------------------------------------------------
 
