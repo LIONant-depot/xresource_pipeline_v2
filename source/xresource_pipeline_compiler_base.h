@@ -60,16 +60,18 @@ namespace xresource_pipeline::compiler
                             xcore::err                  Compile                     ( void )                                                        noexcept;
                             xcore::err                  Parse                       ( int argc, const char* argv[] )                                noexcept;
                             void                        displayProgressBar          (const char* pTitle, float progress)                    const   noexcept;
+                            xcore::cstring              getDestinationPath          ( xcore::target::platform p )                           const   noexcept;
+                            xcore::err                  CreatePath                  ( const xcore::cstring& Path )                          const   noexcept;
 
     protected:
         
-                            xcore::err                  InternalParse               ( const int argc, const char *argv[] )                          noexcept;
-                            xcore::cstring              getDestinationPath          ( xcore::target::platform p )                           const   noexcept;
-
         virtual             xcore::guid::rcfull<>       getResourcePipelineFullGuid ( void )                                                const   noexcept = 0;
-        virtual             xcore::err                  onCompile                   ( void )                                                        noexcept = 0;
+        virtual             xcore::err                  onCompile                   ( void )                                                                 = 0;
+
+    private:
+                            xcore::err                  InternalParse               ( const int argc, const char *argv[] );
                             xcore::err                  setupPaths                  ( void )                                                        noexcept;
-                            xcore::err                  CreatePath                  ( const xcore::cstring& Path )                          const   noexcept;
+
     protected:
         
         debug_type                                              m_DebugType                 { debug_type::D0 };

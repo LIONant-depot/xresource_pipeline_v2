@@ -241,7 +241,7 @@ xcore::err base::setupPaths( void ) noexcept
 
 //--------------------------------------------------------------------------
 
-xcore::err base::InternalParse( const int argc, const char *argv[] ) noexcept
+xcore::err base::InternalParse( const int argc, const char *argv[] )
 {
     xcore::cmdline::parser CmdLineParser;
     
@@ -464,22 +464,30 @@ xcore::cstring base::getDestinationPath( xcore::target::platform p ) const noexc
 
 xcore::err base::Parse( int argc, const char *argv[] ) noexcept
 {
-    if( auto Err = InternalParse( argc, argv ); Err )
+    try
     {
-        if( Err.getCode().getState<xresource_pipeline::error>() != xresource_pipeline::error::DISPLAY_HELP )
+        if( auto Err = InternalParse( argc, argv ); Err )
         {
-            // TODO: We should open the log file before this???
-            XLOG_CHANNEL_ERROR(m_LogChannel, "Parsing error (%s)", Err.getCode().m_pString);
+            if( Err.getCode().getState<xresource_pipeline::error>() != xresource_pipeline::error::DISPLAY_HELP )
+            {
+                // TODO: We should open the log file before this???
+                XLOG_CHANNEL_ERROR(m_LogChannel, "Parsing error (%s)", Err.getCode().m_pString);
+            }
+            else
+            {
+                // If we are displaying help we just return...
+                Err.clear();
+            }
+            
+            return Err;
         }
-        else
-        {
-            // If we are displaying help we just return...
-            Err.clear();
-        }
-        
-        return Err;
     }
-    
+    catch (std::runtime_error RunTimeError)
+    {
+        XLOG_CHANNEL_ERROR(m_LogChannel, "%s", RunTimeError.what());
+        return xerr_failure_s("FAILED: exception thrown exiting...");
+    }
+
     return {};
 }
 
