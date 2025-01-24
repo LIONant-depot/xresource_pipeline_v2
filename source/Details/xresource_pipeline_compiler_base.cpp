@@ -522,6 +522,7 @@ void base::displayProgressBar(const char* pTitle, float progress) const noexcept
     const auto     empty = total_chars_v - (bar_width - pos);
 
     XLOG_CHANNEL_INFO(m_LogChannel, "\r%s: [%s>%s] %3d%%", pTitle, &fill_progress[filled], &empty_progress[empty], static_cast<int>(progress * 100.0));
+    if (progress == 1) printf("\n");
 }
 
 
