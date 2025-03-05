@@ -6,7 +6,6 @@
 #include <string>
 #include "../dependencies/xcore/src/xcore.h"
 
-
 //------------------------------------------------------------
 // The expected directory structure
 //------------------------------------------------------------
@@ -91,6 +90,10 @@ namespace xresource_pipeline
     #include "../dependencies/xproperty/source/examples/imgui/my_property_ui_null.h"
 #endif
 #include "../dependencies/xproperty/source/examples/xcore_sprop_serializer/xcore_sprop_serializer.h"
+
+#include "../dependencies/xresource/source/xresource_guid.h"
+#include "../dependencies/xresource/source/xresource_guid_properties.h"
+
 
 #include "xresource_pipeline_tag.h"
 #include "xresource_pipeline_dependencies.h"

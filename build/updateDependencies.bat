@@ -40,6 +40,14 @@ git clone https://github.com/LIONant-depot/xproperty.git "../dependencies/xprope
 if %ERRORLEVEL% GEQ 1 goto :ERROR
 
 rem ------------------------------------------------------------
+rem XRESOURCE
+rem ------------------------------------------------------------
+:XPROPERTY
+rmdir "../dependencies/xresource" /S /Q
+git clone https://github.com/LIONant-depot/xresource.git "../dependencies/xresource"
+if %ERRORLEVEL% GEQ 1 goto :ERROR
+
+rem ------------------------------------------------------------
 rem DONE
 rem ------------------------------------------------------------
 :DONE

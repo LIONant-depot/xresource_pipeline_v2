@@ -9,7 +9,7 @@ namespace xresource_pipeline
             return std::make_unique<info>();
         };
 
-        std::uint64_t ResourceTypeGUID(void) const noexcept override
+        xresource::type_guid ResourceTypeGUID(void) const noexcept override
         {
             return info::type_guid_v;
         }

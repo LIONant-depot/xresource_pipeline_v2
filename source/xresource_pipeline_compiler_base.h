@@ -78,9 +78,6 @@ namespace xresource_pipeline::compiler
         optimization_type                                       m_OptimizationType          { optimization_type::O1 };
         std::chrono::steady_clock::time_point                   m_Timmer                    {};
 
-
-        std::uint64_t                                           m_RscGuid                   {}; // GUID of the resource
-
         project_paths                                           m_ProjectPaths              {};
 
         xcore::cstring                                          m_InputSrcDescriptorPath    {}; // Path to of the descriptor that we have been asked to compile
