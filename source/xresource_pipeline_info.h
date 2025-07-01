@@ -32,13 +32,13 @@ namespace xresource_pipeline
 
         xresource::full_guid                m_Guid          {};
         std::string                         m_Name          {};
+        std::string                         m_Comment       {};
         std::vector<xresource::full_guid>   m_RscLinks      {};
-        const char*                         m_pTypeName     {nullptr};
 
         inline              info                (void) = default;
                             info                (info&& Info) = default;
                 info&       operator =          (info&& Info) = default;
-        inline              info                (xresource::full_guid Guid, const char* pTypeName) : m_Guid{ Guid }, m_pTypeName{ pTypeName } {}
+        inline              info                (xresource::full_guid Guid) : m_Guid{ Guid } {}
         void                SetupFromSource     (std::string_view FileName) override {}
         void                Validate            (std::vector<std::string>& Errors) const noexcept override {}
 
@@ -48,10 +48,9 @@ namespace xresource_pipeline
             , &info::m_Name
             , member_help<"Name of the resource, this is the name that the user will see"
             >>
-        , obj_member<"RscLinks"
-            , &info::m_RscLinks
-            , xproperty::member_flags<flags::SHOW_READONLY>
-            , member_help<"This are the links associated with this resource. These links are usually to other resources, such tags, folders, etc..."
+        , obj_member<"Comment"
+            , &info::m_Comment
+            , member_help<"Comment from the user if he chooses to describe/write anything about this resource"
             >>
         , obj_scope< "Details"
             , obj_member<"Version"
@@ -63,32 +62,14 @@ namespace xresource_pipeline
                 , member_flags<flags::SHOW_READONLY>
                 , member_help<"Unique identifier for the resource, this is how the system knows about this resource"
                 >>
-            , obj_member<"Guid"
-                , +[](info& O, bool bRead, std::uint64_t& Value )
-                {
-                    // This properties are kept for backwards compatibility
-                    if (bRead)Value = O.m_Guid.m_Instance.m_Value;
-                    else O.m_Guid.m_Instance.m_Value = Value;
-                }
-                , member_flags<flags::DONT_SAVE, flags::DONT_SHOW
-                >>
-            , obj_member<"TypeGuid"
-                , +[](info& O, bool bRead, std::uint64_t& Value )
-                {
-                    // This properties are kept for backwards compatibility
-                    if (bRead)Value = O.m_Guid.m_Type.m_Value;
-                    else O.m_Guid.m_Type.m_Value = Value;
-                }
-                , member_flags<flags::DONT_SAVE, flags::DONT_SHOW
-                >>
-            , obj_member_ro< "TypeName"
-                , +[](info& O, bool, std::string& IO) { IO = O.m_pTypeName ? O.m_pTypeName : "Unkown"; }
-                , xproperty::member_flags<flags::DONT_SAVE>
-                , member_help<"Name of the resource type as a string."
+            , obj_member<"RscLinks"
+                , &info::m_RscLinks
+                , xproperty::member_flags<flags::SHOW_READONLY>
+                , member_help<"This are the links associated with this resource. These links are usually to other resources, such tags, folders, etc..."
                 >>
             , member_ui_open<false>
             , member_help<"Detail information that for most part the user does not need most of the time."
-        >>
+            >>
         )
     };
     XPROPERTY_VREG(info)

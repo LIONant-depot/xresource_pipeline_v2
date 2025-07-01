@@ -14,12 +14,12 @@ namespace xresource_pipeline
             for (auto p = s_pHead; p; p = p->m_pNext) if (p->ResourceTypeGUID() == ResourceTypeGUID) return p;
             return nullptr;
         }
-                                                factory_base            (void) noexcept : m_pNext{ s_pHead } { s_pHead = this; }
-        virtual                                ~factory_base            (void) noexcept = default;
-        virtual std::unique_ptr<descriptor::base> CreateDescriptor        (void) const noexcept = 0;
-        virtual xresource::type_guid            ResourceTypeGUID        (void) const noexcept = 0;
-        virtual const char*                     ResourceTypeName        (void) const noexcept = 0;
-        virtual const xproperty::type::object&  ResourceXPropertyObject (void) const noexcept = 0;
+                                                    factory_base            (void) noexcept : m_pNext{ s_pHead } { s_pHead = this; }
+        virtual                                    ~factory_base            (void) noexcept = default;
+        virtual std::unique_ptr<descriptor::base>   CreateDescriptor        (void) const noexcept = 0;
+        virtual xresource::type_guid                ResourceTypeGUID        (void) const noexcept = 0;
+        virtual const char*                         ResourceTypeName        (void) const noexcept = 0;
+        virtual const xproperty::type::object&      ResourceXPropertyObject (void) const noexcept = 0;
 
         inline info                             CreateInfo              ( xresource::instance_guid GUID = {}) const noexcept
         {
@@ -34,7 +34,7 @@ namespace xresource_pipeline
                 assert(GUID.isValid());
             }
 
-            return info{ {GUID, ResourceTypeGUID()}, ResourceTypeName() };
+            return info{ {GUID, ResourceTypeGUID()} };
         }
     };
 }

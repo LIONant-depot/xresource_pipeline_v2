@@ -1,5 +1,6 @@
 
 #include "xresource_pipeline.h"
+#include <cwctype>
 
 namespace xresource_pipeline::compiler {
 
@@ -162,15 +163,15 @@ xcore::err base::setupPaths( void ) noexcept
     //
     // Set all the core directories
     //
-    m_ProjectPaths.m_Descriptors = xcore::string::Fmt("%s/Descriptors", m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_Config = xcore::string::Fmt("%s/Config", m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_Assets = xcore::string::Fmt("%s/Assets", m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_Cache = xcore::string::Fmt("%s/Cache", m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_CacheTemp = xcore::string::Fmt("%s/Temp", m_ProjectPaths.m_Cache.data());
-    m_ProjectPaths.m_CachedDescriptors = xcore::string::Fmt("%s/Descriptors", m_ProjectPaths.m_Cache.data());
-    m_ProjectPaths.m_Resources = xcore::string::Fmt("%s/Resources", m_ProjectPaths.m_Cache.data());
-    m_ProjectPaths.m_ResourcesPlatforms = xcore::string::Fmt("%s/Platforms", m_ProjectPaths.m_Resources.data());
-    m_ProjectPaths.m_ResourcesLogs = xcore::string::Fmt("%s/Logs", m_ProjectPaths.m_Resources.data());
+    m_ProjectPaths.m_Descriptors        = xcore::string::Fmt("%s/Descriptors",  m_ProjectPaths.m_Project.data());
+    m_ProjectPaths.m_Config             = xcore::string::Fmt("%s/Config",       m_ProjectPaths.m_Project.data());
+    m_ProjectPaths.m_Assets             = xcore::string::Fmt("%s/Assets",       m_ProjectPaths.m_Project.data());
+    m_ProjectPaths.m_Cache              = xcore::string::Fmt("%s/Cache",        m_ProjectPaths.m_Project.data());
+    m_ProjectPaths.m_CacheTemp          = xcore::string::Fmt("%s/Temp",         m_ProjectPaths.m_Cache.data());
+    m_ProjectPaths.m_CachedDescriptors  = xcore::string::Fmt("%s/Descriptors",  m_ProjectPaths.m_Cache.data());
+    m_ProjectPaths.m_Resources          = xcore::string::Fmt("%s/Resources",    m_ProjectPaths.m_Cache.data());
+    m_ProjectPaths.m_ResourcesPlatforms = xcore::string::Fmt("%s/Platforms",    m_ProjectPaths.m_Resources.data());
+    m_ProjectPaths.m_ResourcesLogs      = xcore::string::Fmt("%s/Logs",         m_ProjectPaths.m_Resources.data());
 
     //
     // Set up the path required for this complilation
@@ -606,9 +607,34 @@ xcore::err base::Compile( void ) noexcept
 
         //
         // Save the dependency file
-        //         
-       // if( auto Err = m_Dependencies.Serialize( m_Dependencies, xcore::string::Fmt( "%s/%s", m_BrowserPath.data(), xresource_pipeline::resource_dependencies_name_v.data()).data(), false); Err )
-       //     return Err;
+        //
+        if (m_Dependencies.hasDependencies())
+        {
+            //
+            // Normalize asset dependencies
+            //
+            if ( false == m_Dependencies.m_Assets.empty() )
+            {
+                for (auto& S : m_Dependencies.m_Assets)
+                {
+                    std::ranges::transform(S, S.begin(), [](auto c) {return std::tolower(c); });
+                    std::ranges::transform(S, S.begin(), [](auto c) {return c == '/' ? '\\' : c; });
+                }
+
+                // Sort the vector to bring duplicates together
+                std::sort(m_Dependencies.m_Assets.begin(), m_Dependencies.m_Assets.end());
+
+                // Remove consecutive duplicates
+                m_Dependencies.m_Assets.erase(std::unique(m_Dependencies.m_Assets.begin(), m_Dependencies.m_Assets.end()), m_Dependencies.m_Assets.end());
+            }
+
+            for (auto& S : m_Dependencies.m_VirtualAssets)
+                std::ranges::transform(S, S.begin(), [](auto c){ return std::tolower(c); });
+
+
+            if (auto Err = m_Dependencies.Serialize( false, xcore::string::Fmt("%s/dependencies.txt", m_ResourceLogPath.data()).data(), xproperty::settings::context{} ); Err)
+                return Err;
+        }
 
         //
         // Get the timer

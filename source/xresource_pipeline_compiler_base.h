@@ -39,17 +39,17 @@ namespace xresource_pipeline::compiler
 
         struct project_paths
         {
-            xcore::cstring                                          m_Project{}; // Project or Library that contains the resource (note that this is the root)
-            xcore::cstring                                          m_Descriptors{};
-            xcore::cstring                                          m_Config{};
-            xcore::cstring                                          m_Assets{};
-            xcore::cstring                                          m_Cache{};
-            xcore::cstring                                          m_CacheTemp{};
-            xcore::cstring                                          m_CachedDescriptors{};
-            xcore::cstring                                          m_Resources{};
-            xcore::cstring                                          m_ResourcesPlatforms{};
-            xcore::cstring                                          m_ResourcesLogs{};
-            xcore::cstring                                          m_Output{};
+            xcore::cstring          m_Project               = {}; // Project or Library that contains the resource (note that this is the root)
+            xcore::cstring          m_Descriptors           = {};
+            xcore::cstring          m_Config                = {};
+            xcore::cstring          m_Assets                = {};
+            xcore::cstring          m_Cache                 = {};
+            xcore::cstring          m_CacheTemp             = {};
+            xcore::cstring          m_CachedDescriptors     = {};
+            xcore::cstring          m_Resources             = {};
+            xcore::cstring          m_ResourcesPlatforms    = {};
+            xcore::cstring          m_ResourcesLogs         = {};
+            xcore::cstring          m_Output                = {};
         };
 
     public:
@@ -65,7 +65,7 @@ namespace xresource_pipeline::compiler
 
     protected:
         
-        virtual             xcore::guid::rcfull<>       getResourcePipelineFullGuid ( void )                                                const   noexcept = 0;
+       // virtual             xcore::guid::rcfull<>       getResourcePipelineFullGuid ( void )                                                const   noexcept = 0;
         virtual             xcore::err                  onCompile                   ( void )                                                                 = 0;
 
     private:
