@@ -4,7 +4,7 @@ include(${CMAKE_BINARY_DIR}/_deps/xcmake_tools/Common.cmake)
 FetchAndPopulate("https://github.com/LIONant-depot/xtextfile.git" "main")
 FetchAndPopulate("https://github.com/LIONant-depot/xcmdline.git" "main")
 FetchAndPopulate("https://github.com/LIONant-depot/xresource.git" "main")
-FetchAndPopulate("https://github.com/LIONant-depot/xproperty.git" "main")
+FetchAndPopulate("https://github.com/LIONant-depot/xproperty.git" "master")
 
 DefineInterfaceComponent(xresource_pipeline_v2 "dependencies/xcore"
   "source/xresource_pipeline_version.h"
