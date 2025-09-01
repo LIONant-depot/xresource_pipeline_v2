@@ -25,8 +25,7 @@ namespace xresource_pipeline
         {
             if (GUID.empty())
             {
-                GUID.m_Value = xcore::guid::unit<64>(xcore::not_null).m_Value;
-                GUID.m_Value |= 1;
+                GUID = xresource::instance_guid::GenerateGUID();
             }
             else
             {

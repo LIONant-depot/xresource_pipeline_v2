@@ -5,10 +5,10 @@ namespace xresource_pipeline::descriptor
         virtual void SetupFromSource( std::string_view FileName ) = 0;
         virtual void Validate       ( std::vector<std::string>& Errors ) const noexcept = 0;
 
-        virtual xcore::err Serialize( bool isReading, std::string_view Name, xproperty::settings::context& Context ) noexcept
+        virtual xerr Serialize( bool isReading, std::wstring_view FileName, xproperty::settings::context& Context ) noexcept
         {
-            xcore::textfile::stream Stream;
-            if (auto Err = Stream.Open(isReading, Name, xcore::textfile::file_type::TEXT); Err)
+            xtextfile::stream Stream;
+            if (auto Err = Stream.Open(isReading, FileName, xtextfile::file_type::TEXT); Err)
                 return Err;
 
             if (auto Err = m_Version.SerializeVersion(Stream); Err)

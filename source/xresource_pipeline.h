@@ -1,10 +1,10 @@
-#ifndef XRESOURCE_PIPELINE_H
-#define XRESOURCE_PIPELINE_H
+#ifndef XRESOURCE_PIPELINE_V2_H
+#define XRESOURCE_PIPELINE_V2_H
 #pragma once
 
 #include <vector>
 #include <string>
-#include "../dependencies/xcore/src/xcore.h"
+#include <array>
 
 //------------------------------------------------------------
 // The expected directory structure
@@ -77,22 +77,45 @@
 
 namespace xresource_pipeline
 {
-    enum class error : std::uint32_t
-    { GUID          = xcore::guid::unit<32>("xresource_pipeline").m_Value
-    , OK            = 0
+    enum class state : std::uint8_t
+    { OK            = 0
     , FAILURE       
     , DISPLAY_HELP
     };
+
+    enum class platform : std::uint8_t
+    { WINDOWS = 0
+    , MAC     
+    , IOS     
+    , LINUX   
+    , ANDROID 
+    , COUNT
+    };
+
+    inline constexpr static std::array wplatform_v
+    { L"WINDOWS"
+    , L"MAC"
+    , L"IOS"
+    , L"LINUX"
+    , L"ANDROID"
+    };
+
+    enum class msg_type : std::uint8_t
+    { INFO
+    , WARNING
+    , ERROR
+    };
 }
 
-#include "../dependencies/xproperty/source/examples/imgui/my_properties.h"
+#include "dependencies/xstrtool/source/xstrtool.h"
+#include "dependencies/xproperty/source/examples/imgui/my_properties.h"
 #ifndef XRESOURCE_PIPELINE_NO_COMPILER
-    #include "../dependencies/xproperty/source/examples/imgui/my_property_ui_null.h"
+    #include "dependencies/xproperty/source/examples/imgui/my_property_ui_null.h"
 #endif
-#include "../dependencies/xproperty/source/examples/xcore_sprop_serializer/xcore_sprop_serializer.h"
+#include "dependencies/xproperty/source/examples/xcore_sprop_serializer/xcore_sprop_serializer.h"
 
-#include "../dependencies/xresource/source/xresource_guid.h"
-#include "../dependencies/xresource/source/xresource_guid_properties.h"
+#include "dependencies/xresource/source/xresource_guid.h"
+#include "dependencies/xresource/source/xresource_guid_properties.h"
 
 
 #include "xresource_pipeline_tag.h"

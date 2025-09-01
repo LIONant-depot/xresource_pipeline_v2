@@ -1,6 +1,9 @@
 
 #include "xresource_pipeline.h"
 #include <cwctype>
+#include <stdio.h>
+#include <filesystem>
+#include "dependencies/xcmdline/source/xcmdline_parser.h"
 
 namespace xresource_pipeline::compiler {
 
@@ -8,21 +11,21 @@ base* g_pBase = nullptr;
 
 //---------------------------------------------------------------------------------------
 
-void LogFunction( const xcore::log::channel& Channel, xcore::log::msg_type Type, const char* pString, int Line, const char* file ) noexcept
+void LogFunction( msg_type Type, std::string_view String, std::uint32_t Line, std::string_view file ) noexcept
 {
-    if (pString == nullptr) pString = "Unkown";
+    if (String.empty()) String = "Unkown";
 
     //
     // Print to the standard output
     //
     {
         static bool bPendingNewLine = false;
-        if (pString[0] == '\r')
+        if (String[0] == '\r')
         {
-            printf
-            ("\r[%s] %s"
-            , xcore::log::msg_type::L_INFO == Type ? "Info" : xcore::log::msg_type::L_WARNING == Type ? "Warning" : "Error"
-            , &pString[1]
+            std::cout << std::format
+            ("\r[{}] {}"
+            , msg_type::INFO == Type ? "Info" : msg_type::WARNING == Type ? "Warning" : "Error"
+            , String.substr(1)
             );
             bPendingNewLine = true;
         }
@@ -32,10 +35,10 @@ void LogFunction( const xcore::log::channel& Channel, xcore::log::msg_type Type,
             if (bPendingNewLine) printf("\n");
             bPendingNewLine = false;
 
-            printf
-            ("[%s] %s\n"
-            , xcore::log::msg_type::L_INFO == Type ? "Info" : xcore::log::msg_type::L_WARNING == Type ? "Warning" : "Error"
-            , pString
+            std::cout << std::format
+            ("[{}] {}\n"
+            , msg_type::INFO == Type ? "Info" : msg_type::WARNING == Type ? "Warning" : "Error"
+            , String
             );
         }
 
@@ -46,45 +49,62 @@ void LogFunction( const xcore::log::channel& Channel, xcore::log::msg_type Type,
     //
     // Save to the log file
     //
-    if( g_pBase->m_LogFile.isOpen() ) 
+    if( g_pBase->m_pLogFile ) 
     {
-        if( auto Err = g_pBase->m_LogFile.Printf
-            ( "%s(%d) [%s] %s\n"
-            , file ? file : "Unkown file"
+        auto OutputString = std::format( "{}({}) [{}] {}\n"
+            , file.empty() ? std::string_view("Unkown file") : file
             , Line
-            , xcore::log::msg_type::L_INFO == Type ? "Info"
-            : xcore::log::msg_type::L_WARNING == Type ? "Warning"
+            , msg_type::INFO    == Type ? "Info"
+            : msg_type::WARNING == Type ? "Warning"
             : "Error"
-            , pString[0] == '\r' ? &pString[1] : pString
-            ); Err )
+            , String[0] == '\r' ? String.substr(1) : String
+            );
+
+        if( auto Err = fprintf_s(g_pBase->m_pLogFile, "%s", OutputString.c_str() ); Err < 0 )
         {
             printf( "Fail to save data in log\n" );
-            Err.clear();
         }
 
         // Make sure things are written in time...
-        g_pBase->m_LogFile.Flush();
+        fflush(g_pBase->m_pLogFile);
     }
+}
+
+//--------------------------------------------------------------------------
+
+void xerr_ErrorHandler(const char* StateStr, std::uint8_t state, std::string_view msg, std::uint32_t line, std::string_view file)
+{
+    // If the user ask us to give all the info... we will...
+    if (g_pBase && g_pBase->m_DebugType == base::debug_type::Dz ) LogFunction(msg_type::ERROR, std::format( "{}; with ErrCode({}) = {}.", msg, state, StateStr ), line, file);
 }
 
 //--------------------------------------------------------------------------
 
 base::base( void ) noexcept
 {
-    // Install the log function
-    xcore::get().m_MainLogger.m_pOutput = LogFunction;
     g_pBase = this;
+    xerr::m_pCallback = xerr_ErrorHandler;
+}
+
+//--------------------------------------------------------------------------
+base::~base()
+{
+    //
+    // Make sure that the log file is closed
+    //
+    if (m_pLogFile) fclose(m_pLogFile);
 }
 
 //------------------------------------------------------------------------------
 // https://superuser.com/questions/1362080/which-characters-are-invalid-for-an-ms-dos-filename
 // Try to create a very compact resource file name
 //------------------------------------------------------------------------------
+/*
 template< typename T_CHAR, int extra_v=0, typename T > constexpr
-xcore::string::ref<T_CHAR> CompactName( T aVal ) noexcept
+std::string CompactName( T aVal ) noexcept
 {
     static_assert(std::is_integral_v<T>);
-    using t = xcore::types::to_uint_t<T>;
+    using t = to_uint_t<T>;
     using u = xcore::string::ref<T_CHAR>::units;
     constexpr auto  string_capacity_v   = 64;
     auto            String              = xcore::string::ref<T_CHAR>(u(string_capacity_v));
@@ -122,72 +142,90 @@ xcore::string::ref<T_CHAR> CompactName( T aVal ) noexcept
 
     return String;
 }
+*/
 
 //--------------------------------------------------------------------------
 
-xcore::err base::setupPaths( void ) noexcept
+xerr base::setupPaths( void ) noexcept
 {
     //
     // Get resource partial path should be something like this: "ResourceType/0F/23/321230F23"
     //
     {
-        int iStartString;
-        int iEndString;
-        if( xcore::string::FindStrI(m_InputSrcDescriptorPath, "Descriptors") == 0 )
+        std::size_t iStartString;
+        std::size_t iEndString;
+        if( xstrtool::findI( m_InputSrcDescriptorPath, L"Descriptors") != std::string::npos )
         {
-            iStartString = xcore::string::FindStr(m_InputSrcDescriptorPath, "/");
+            iStartString = xstrtool::findI( m_InputSrcDescriptorPath, L"/");
         }
         else
         {
-            if (xcore::string::FindStrI(m_InputSrcDescriptorPath, "Cache") != 0) return xerr_failure_s("Expecting a descriptor path that starts with a 'C' for Cache or 'D' for Descriptor");
-            iStartString = xcore::string::FindStr(m_InputSrcDescriptorPath, "/");
-            if (iStartString >= 0) iStartString = xcore::string::FindStr(&m_InputSrcDescriptorPath[iStartString + 1], "/");
+            if (xstrtool::findI(m_InputSrcDescriptorPath, L"Cache") != std::string::npos ) 
+                return xerr::create_f<state, "Expecting a descriptor path that starts with a 'C' for Cache or 'D' for Descriptor" >();
+
+            iStartString = xstrtool::findI(m_InputSrcDescriptorPath, L"/");
+            if (iStartString != std::string::npos ) iStartString = xstrtool::findI(m_InputSrcDescriptorPath, L"/", iStartString + 1);
         }
-        iEndString = xcore::string::findLastInstance(m_InputSrcDescriptorPath, '.');
-        if (iEndString < 0)  return xerr_failure_s("Expecting a descriptor path that has an extension '.'");
-        if (iStartString < 0) return xerr_failure_s("The descriptor did not included a valid path (1)");
+        iEndString = xstrtool::rfindI(m_InputSrcDescriptorPath, L".");
+        if (iEndString == std::string::npos )  
+            return xerr::create_f<state, "Expecting a descriptor path that has an extension '.'">();
+
+        if (iStartString == std::string::npos ) 
+            return xerr::create_f<state, "The descriptor did not included a valid path (1)">();
 
         // Now that should have something that looks like this: "ResourceType/0F/23/321230F23"
-        m_ResourcePartialPath.copy_n( &m_InputSrcDescriptorPath[iStartString+1], iEndString - iStartString - 1);
+        m_ResourcePartialPath = xstrtool::CopyN( std::wstring_view( m_InputSrcDescriptorPath.begin() + iStartString+1, m_InputSrcDescriptorPath.end()), iEndString - iStartString - 1);
     }
 
     //
     // Get the resource type string
     //
     {
-        int iLastCharOfTheType = xcore::string::FindStr(m_ResourcePartialPath, "/");
-        if (iLastCharOfTheType < 0) return xerr_failure_s("The descriptor did not included a valid path (2)");
-        m_ResourceType.copy_n(m_ResourcePartialPath, iLastCharOfTheType);
+        std::size_t iLastCharOfTheType = xstrtool::findI(m_ResourcePartialPath, L"/");
+        if (iLastCharOfTheType == std::string::npos ) 
+            return xerr::create_f< state, "The descriptor did not included a valid path (2)">();
+
+        m_ResourceType = xstrtool::CopyN( m_ResourcePartialPath, iLastCharOfTheType);
     }
 
     //
     // Set all the core directories
     //
-    m_ProjectPaths.m_Descriptors        = xcore::string::Fmt("%s/Descriptors",  m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_Config             = xcore::string::Fmt("%s/Config",       m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_Assets             = xcore::string::Fmt("%s/Assets",       m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_Cache              = xcore::string::Fmt("%s/Cache",        m_ProjectPaths.m_Project.data());
-    m_ProjectPaths.m_CacheTemp          = xcore::string::Fmt("%s/Temp",         m_ProjectPaths.m_Cache.data());
-    m_ProjectPaths.m_CachedDescriptors  = xcore::string::Fmt("%s/Descriptors",  m_ProjectPaths.m_Cache.data());
-    m_ProjectPaths.m_Resources          = xcore::string::Fmt("%s/Resources",    m_ProjectPaths.m_Cache.data());
-    m_ProjectPaths.m_ResourcesPlatforms = xcore::string::Fmt("%s/Platforms",    m_ProjectPaths.m_Resources.data());
-    m_ProjectPaths.m_ResourcesLogs      = xcore::string::Fmt("%s/Logs",         m_ProjectPaths.m_Resources.data());
+    m_ProjectPaths.m_Descriptors        = std::format(L"{}/Descriptors",  m_ProjectPaths.m_Project);
+    m_ProjectPaths.m_Config             = std::format(L"{}/Config",       m_ProjectPaths.m_Project);
+    m_ProjectPaths.m_Assets             = std::format(L"{}/Assets",       m_ProjectPaths.m_Project);
+    m_ProjectPaths.m_Cache              = std::format(L"{}/Cache",        m_ProjectPaths.m_Project);
+    m_ProjectPaths.m_CacheTemp          = std::format(L"{}/Temp",         m_ProjectPaths.m_Cache);
+    m_ProjectPaths.m_CachedDescriptors  = std::format(L"{}/Descriptors",  m_ProjectPaths.m_Cache);
+    m_ProjectPaths.m_Resources          = std::format(L"{}/Resources",    m_ProjectPaths.m_Cache);
+    m_ProjectPaths.m_ResourcesPlatforms = std::format(L"{}/Platforms",    m_ProjectPaths.m_Resources);
+    m_ProjectPaths.m_ResourcesLogs      = std::format(L"{}/Logs",         m_ProjectPaths.m_Resources);
 
     //
     // Set up the path required for this complilation
     //
-    m_ResourceLogPath = xcore::string::Fmt("%s/%s.log"
-        , m_ProjectPaths.m_ResourcesLogs.data()
-        , m_ResourcePartialPath.data()
-    );
+    m_ResourceLogPath = std::format(L"{}/{}.log", m_ProjectPaths.m_ResourcesLogs, m_ResourcePartialPath );
 
     // Make sure the log path is ready
     if (auto Err = base::CreatePath(m_ResourceLogPath); Err)
         return Err;
 
     // Open the log file
-    if (auto Err = m_LogFile.open(xcore::string::To<wchar_t>(xcore::string::Fmt("%s/Log.txt", m_ResourceLogPath.data())), "wt"); Err)
-        return xerr_failure_s("Fail to create the log file");
+    if ( errno_t Err = _wfopen_s( &m_pLogFile, std::format(L"{}/Log.txt", m_ResourceLogPath ).c_str(), L"wt"); Err != 0)
+    {
+        std::array<wchar_t, 256> errMsg;
+        if (_wcserror_s( errMsg.data(), errMsg.size(), Err) == 0)
+        {
+            xerr::LogMessage<state::FAILURE>(std::format("Log file File system Error: {}, {}", Err, xstrtool::To(errMsg.data())));
+        }
+        else 
+        {
+            xerr::LogMessage<state::FAILURE>(std::format("Log file File system unkown error: {}", Err));
+        }
+
+        return xerr::create_f<state, "Fail to create the log file">();
+    }
+        
 
     //
     // Make sure all the required directories are created
@@ -203,22 +241,23 @@ xcore::err base::setupPaths( void ) noexcept
     // Set all the valid target paths
     //
     {
-          xcore::cstring EverythingExceptTheResourceGUID;
+          std::wstring EverythingExceptTheResourceGUID;
 
-          int iLast = xcore::string::findLastInstance(m_ResourcePartialPath, '/');
-          if (iLast < 0) return xerr_failure_s("The descriptor did not included a valid path (3)");
+          auto iLast = xstrtool::rfindI(m_ResourcePartialPath, L"/");
+          if (iLast == std::string::npos ) 
+            return xerr::create_f<state, "The descriptor did not included a valid path (3)">();
 
-          EverythingExceptTheResourceGUID.copy_n(m_ResourcePartialPath, iLast);
+          EverythingExceptTheResourceGUID = xstrtool::CopyN(m_ResourcePartialPath, iLast);
 
         for (auto& E : m_Target)
         {
             if (E.m_bValid)
             {
                 // This should end up like... "FullPath/Project.lion_project/Cache/Platforms/Windows/ResourceType/0F/23"
-                E.m_DataPath = xcore::string::Fmt("%s/%s/%s"
-                    , m_ProjectPaths.m_ResourcesPlatforms.data()
-                    , xcore::target::getPlatformString(E.m_Platform)
-                    , EverythingExceptTheResourceGUID.data()
+                E.m_DataPath = std::format(L"{}/{}/{}"
+                    , m_ProjectPaths.m_ResourcesPlatforms
+                    , wplatform_v[static_cast<int>(E.m_Platform)]
+                    , EverythingExceptTheResourceGUID
                     );
 
                 // Make sure is ready for rock and roll
@@ -227,10 +266,10 @@ xcore::err base::setupPaths( void ) noexcept
 
                 // OK then now everything including the final file name (no extension)
                 // This should end up like... "FullPath/Project.lion_project/Cache/Platforms/Windows/ResourceType/0F/23/4fdsdf230F"
-                E.m_DataPath = xcore::string::Fmt("%s/%s/%s"
-                    , m_ProjectPaths.m_ResourcesPlatforms.data()
-                    , xcore::target::getPlatformString(E.m_Platform)
-                    , m_ResourcePartialPath.data()
+                E.m_DataPath = std::format(L"{}/{}/{}"
+                    , m_ProjectPaths.m_ResourcesPlatforms
+                    , wplatform_v[static_cast<int>(E.m_Platform)]
+                    , m_ResourcePartialPath
                 );
 
             }
@@ -242,177 +281,293 @@ xcore::err base::setupPaths( void ) noexcept
 
 //--------------------------------------------------------------------------
 
-xcore::err base::InternalParse( const int argc, const char *argv[] )
+void base::LogMessage(xresource_pipeline::msg_type Type, const char* pString, const std::source_location Loc ) const noexcept
 {
-    xcore::cmdline::parser CmdLineParser;
+    LogFunction(Type, pString, Loc.line(), Loc.file_name());
+}
+
+//--------------------------------------------------------------------------
+
+void base::LogMessage(xresource_pipeline::msg_type Type, std::string_view String, const std::source_location Loc) const noexcept
+{
+    LogFunction(Type, String, Loc.line(), Loc.file_name());
+}
+
+//--------------------------------------------------------------------------
+
+void base::LogMessage(xresource_pipeline::msg_type Type, std::string&& String, const std::source_location Loc ) const noexcept
+{
+    LogFunction( Type, String, Loc.line(), Loc.file_name() );
+}
+
+//--------------------------------------------------------------------------
+
+void base::LogMessage(xresource_pipeline::msg_type Type, std::wstring&& String, const std::source_location Loc) const noexcept
+{
+    LogFunction(Type, xstrtool::To(String), Loc.line(), Loc.file_name());
+}
+
+//--------------------------------------------------------------------------
+
+xerr base::InternalParse( const int argc, const char *argv[] )
+{
+    xcmdline::parser CmdLineParser;
     
     //
     // Create the switches and their rules
     //
-    {
-        CmdLineParser.AddCmdSwitch( xcore::string::const_crc("OPTIMIZATION"),  1,  1, 0, 1, false );
-        CmdLineParser.AddCmdSwitch( xcore::string::const_crc("DEBUG"),         1,  1, 0, 1, false );
-        CmdLineParser.AddCmdSwitch( xcore::string::const_crc("TARGET"),        1, -1, 0, 1, false );
-        CmdLineParser.AddCmdSwitch( xcore::string::const_crc("DESCRIPTOR"),    1,  1, 1, 1, false );
-        CmdLineParser.AddCmdSwitch( xcore::string::const_crc("PROJECT"),       1,  1, 1, 1, false );
-        CmdLineParser.AddCmdSwitch( xcore::string::const_crc("OUTPUT"),        1,  1, 1, 1, false );
-    }
+    auto MainGroup      = CmdLineParser.addGroup( "Non-Optionals", "These are all the commands that you must always pass to the compiler");
+    auto OptiminalGroup = CmdLineParser.addGroup( "Optionals",     "These are commands that have default so you may choose not to include in the command line");
+
+    const auto hHelp = CmdLineParser.addOption
+        ( "H"
+        , "Asks the system to print the help.\n"
+        , false
+        , 0
+        , OptiminalGroup
+        );
+
+    const auto hOptimization = CmdLineParser.addOption
+        ( "OPTIMIZATION"
+        , "Tells the compiler how much it should optimize the resource:\n"
+             "   O0 - Compile as fast as possible\n"
+             "   Q1 - Compile with optimizations (Default)\n"
+             "   Qz - Maximum performance for asset"
+        , false
+        , 1
+        , OptiminalGroup
+        );
+
+    const auto hDebug = CmdLineParser.addOption
+        ( "DEBUG"
+        , "Tells the compiler to help debug the resource:\n"
+            "   D0 - Basic debug information (Default)\n"
+            "   D1 - Extra debug information\n"
+            "   Dz - Maximum debug information"
+        , false
+        , 1
+        , OptiminalGroup
+        );
+
+    const auto hTarget = CmdLineParser.addOption
+        ( "TARGET"
+        , "Tells which platforms should be compiling for,\n"
+            "   use one or multiple of the following:\n"
+            "   WINDOWS MAC IOS LINUX ANDROID\n"
+            "   WINDOWS (is the default)"
+        , false
+        , 1
+        , OptiminalGroup
+        );
+
+    const auto hProject =  CmdLineParser.addOption
+        ( "PROJECT"
+        , "This tells the compiler for which project we are working for:\n"
+            "   Many of the paths are relative to the project forlder so this is a must have.\n"
+            "   This is the full path of to the project folder\n"
+            "   <FullPathToProjectFolder>\n"
+        , true
+        , 1
+        , MainGroup 
+        );
+
+    const auto hDescriptor = CmdLineParser.addOption
+        ( "DESCRIPTOR"
+        , "Tells the which descriptor we should be compiling:\n"
+            "   Path Relative to project folder to the actual descriptor folder\n"
+            "   Make sure you use quotes to make sure everything is safe\n"
+            "   <FromProjectToDescriptor.desc>\n"
+        , true
+        , 1
+        , MainGroup 
+        );
+
+    const auto hOutput = CmdLineParser.addOption
+        ( "OUTPUT"
+        , "Tells the compiler where the final resource should be saved:\n"
+            "   This path should be a full path and it does not include the platform\n"
+            "   The system will add the platform, type, and guids the the final path\n"
+            "   <FullPathOfTheFinalResource>\n"
+        , true
+        , 1
+        , MainGroup 
+        );
     
     //
     // Start parsing the arguments
     //
-    if( auto Err =  CmdLineParser.Parse( argc, argv ); Err )
+    if( auto Err =  CmdLineParser.Parse( argc, argv ); Err  )
         return Err;
-    
-    //
-    // Deal with the help message
-    //
-    if( argc < 2 || CmdLineParser.DoesUserNeedsHelp() )
-    {
-        std::printf( "\n"
-                  "-------------------------------------------------------------\n"
-                  "LION - Compiler system.                                      \n"
-                  "%s [ %s - %s ]                                               \n"
-                  "Switches: (Make sure they are in order)                      \n"
-                  "     -OPTIMIZATION  O0 - Compile as fast as possible         \n"
-                  "                    Q1 - Compile with optimizations          \n"
-                  "                    Qz - Maximum performance for asset       \n"
-                  "     -DEBUG         D0 - Basic debug information             \n"
-                  "                    D1 - Extra debug information             \n"
-                  "                    Dz - Maximum debug information           \n"
-                  "     -TARGET     <WINDOWS OSX IOS ANDROID>                   \n"
-                  "     -PROJECT    <NetworkFriendlyPathToProject.lion_project> \n"
-                  "     -OUTPUT     <NetworkFriendlyPathToProject.lion_project\\Output> \n"
-                  "     -DESCRIPTOR <RelativeToProject.desc>                    \n"
-                  "-------------------------------------------------------------\n",
-                 argv[0],
-                 __TIME__, __DATE__ );
-        
-        return xerr_code_s( error::DISPLAY_HELP, "User requested help" );
-    }
     
     //
     // Go through the parameters of the command line
     //
-    xcore::cstring InputName;
-    bool           UseDefaultTaget = true;
-    for( int i=0; i< CmdLineParser.getCommandCount(); i++ )
+    if (CmdLineParser.hasOption(hHelp))
     {
-        const auto  Cmd     = CmdLineParser.getCommand(i);
-        const auto  CmdCRC  = Cmd.getCRC();
-        if( CmdCRC == xcore::types::value<xcore::crc<32>::FromString( "TARGET" )> )
+        CmdLineParser.printHelp();
+        return xerr::create<state::DISPLAY_HELP, "User requested to print help">();
+    }
+
+    //
+    // Targets
+    //
+    if (CmdLineParser.hasOption(hTarget))
+    {
+        if ( auto result = CmdLineParser.getOptionArgAs<std::string>(hTarget, 0); std::holds_alternative<xerr>(result) )
+            return std::get<xerr>(result);
+
+        const auto Count = CmdLineParser.getOptionArgCount(hTarget);
+        for (int i = 0; i < Count; i++)
         {
-            const auto Count = Cmd.getArgumentCount(); 
-            if (Count) UseDefaultTaget = false;
-            for( int i=0; i<Count; i++ )
+            bool         bFound = false;
+            std::wstring String;
+
+            if ( auto Param = CmdLineParser.getOptionArgAs<std::string>(hTarget, i); std::holds_alternative<xerr>(Param) )
+                return std::get<xerr>(Param);
+            else
+                String = xstrtool::To(std::move(std::get<std::string>(Param)));
+
+            // Go through all the platforms and pick up the right one
+            constexpr auto TargetCount = static_cast<int>(xresource_pipeline::platform::COUNT);
+            for (int ip = 0; ip < TargetCount; ip++)
             {
-                const char* pString = Cmd.getArgument(i);
-                bool        bFound  = false;
-                
-                // Go through all the platforms and pick up the right one
-                constexpr auto TargetCount = xcore::target::getPlatformCount(); 
-                for( int ip = 0; ip < TargetCount; ip++ )
+                if ( xstrtool::CompareI( xresource_pipeline::wplatform_v[ip], String ) == 0 )
                 {
-                    const auto p = xcore::types::static_cast_safe<xcore::target::platform>( ip );
+                    platform& NewTarget = m_Target[ip];
 
-                    if( xcore::string::CompareI( pString, xcore::target::getPlatformString(p) ) == 0 )
-                    {
-                        platform& NewTarget   = m_Target[ip];
-                        
-                        if( NewTarget.m_bValid )
-                            return xerr_failure_s("The same platform was enter multiple times");
-                        
-                        NewTarget.m_Platform  = p;
-                        NewTarget.m_bValid    = true;
-                        
-                        bFound = true;
-                        break;
-                    }
+                    if (NewTarget.m_bValid)
+                        return xerr::create_f<state, "The same platform was enter multiple times">();
+
+                    NewTarget.m_Platform = static_cast<xresource_pipeline::platform>(ip);
+                    NewTarget.m_bValid   = true;
+
+                    bFound = true;
+                    break;
                 }
-                
-               if( bFound == false )
-                   return xerr_failure_s("Platform not supported");
             }
-        }
-        else if( CmdCRC == xcore::types::value<xcore::crc<32>::FromString( "PROJECT" )> )
-        {
-            if (   -1 == xcore::string::FindStr(Cmd.getArgument(0), ".lion_project")
-                && -1 == xcore::string::FindStr(Cmd.getArgument(0), ".lion_library") )
-                return xerr_failure_s("I got a path in the PROJECT switch that is not a .lion_project or .lion_library path");
 
-            xcore::string::Copy(m_ProjectPaths.m_Project, Cmd.getArgument( 0 ) );
-            xcore::string::CleanPath(m_ProjectPaths.m_Project);
+            if (bFound == false)
+                return xerr::create_f<state, "Platform not supported">();
         }
-        else if (CmdCRC == xcore::types::value<xcore::crc<32>::FromString("OUTPUT")>)
+    }
+    else
+    {
+        m_Target[static_cast<int>(xresource_pipeline::platform::WINDOWS)].m_bValid = true;
+    }
+    
+
+    //
+    // Project
+    //
+    if (CmdLineParser.hasOption(hProject))
+    {
+        if (auto result = CmdLineParser.getOptionArgAs<std::string>(hProject, 0); std::holds_alternative<xerr>(result))
+            return std::get<xerr>(result);
+        else
         {
-            xcore::string::Copy(m_ProjectPaths.m_Output, Cmd.getArgument(0));
-            xcore::string::CleanPath(m_ProjectPaths.m_Output);
+            if ( xstrtool::findI(std::get<std::string>(result), ".lion_project") == std::string::npos 
+              && xstrtool::findI(std::get<std::string>(result), ".lion_library") == std::string::npos )
+            {
+                return xerr::create_f<state, "I got a path in the PROJECT switch that is not a .lion_project or .lion_library path">();
+            }
+
+            m_ProjectPaths.m_Project = xstrtool::To(std::get<std::string>(result));
+            xstrtool::PathNormalize(m_ProjectPaths.m_Project);
         }
-        else if (CmdCRC == xcore::types::value<xcore::crc<32>::FromString("DESCRIPTOR")>)
+    }
+
+    //
+    // Output
+    //
+    if (CmdLineParser.hasOption(hOutput))
+    {
+        if (auto result = CmdLineParser.getOptionArgAs<std::string>(hOutput, 0); std::holds_alternative<xerr>(result))
+            return std::get<xerr>(result);
+        else
         {
-            xcore::string::Copy(m_InputSrcDescriptorPath, Cmd.getArgument(0));
-
-            if ( -1 == xcore::string::FindStrI(m_InputSrcDescriptorPath, ".desc" ) )
-                return xerr_failure_s("You must specify the descriptor path which includes the extension");
-
-            xcore::string::CleanPath(m_InputSrcDescriptorPath);
+            m_ProjectPaths.m_Output = xstrtool::To(std::get<std::string>(result));
+            xstrtool::PathNormalize(m_ProjectPaths.m_Output);
         }
-        else if( CmdCRC == xcore::types::value<xcore::crc<32>::FromString( "OPTIMIZATION" )> )
-        {
-            xcore::cstring BuildType;
+    }
 
-            xcore::string::Copy( BuildType, Cmd.getArgument( 0 ) );
-            
-            if( BuildType == xcore::string::constant("O0") )
+    //
+    // Descriptor
+    //
+    if (CmdLineParser.hasOption(hDescriptor))
+    {
+        if (auto result = CmdLineParser.getOptionArgAs<std::string>(hDescriptor, 0); std::holds_alternative<xerr>(result))
+            return std::get<xerr>(result);
+        else
+        {
+            m_InputSrcDescriptorPath = xstrtool::To(std::get<std::string>(result));
+
+            if (xstrtool::findI(m_InputSrcDescriptorPath, L".desc") == std::string::npos )
+                return xerr::create_f<state, "You must specify the descriptor path which includes the extension">();
+
+            xstrtool::PathNormalize(m_InputSrcDescriptorPath);
+        }
+    }
+
+    //
+    // Optimization
+    //
+    m_OptimizationType = optimization_type::O1;
+    if (CmdLineParser.hasOption(hOptimization))
+    {
+        if (auto result = CmdLineParser.getOptionArgAs<std::string>(hOptimization, 0); std::holds_alternative<xerr>(result))
+            return std::get<xerr>(result);
+        else
+        {
+            std::string Type = std::get<std::string>(result);
+
+            if (xstrtool::CompareI(Type, std::string_view("O0")) == 0)
             {
                 m_OptimizationType = optimization_type::O0;
             }
-            else if( BuildType == xcore::string::constant("O1") )
+            else if (xstrtool::CompareI(Type, std::string_view("O1")) == 0)
             {
                 m_OptimizationType = optimization_type::O1;
             }
-            else if( BuildType == xcore::string::constant("Oz") )
+            else if (xstrtool::CompareI(Type,std::string_view("Oz")) == 0)
             {
-                m_OptimizationType = optimization_type::Oz;
+                m_OptimizationType = optimization_type::O1;
             }
             else
             {
-                return xerr_failure_s("Optimization Type not supported");
+                return xerr::create_f<state, "Optimization Type not supported">();
             }
         }
-        else if( auto crc = xcore::types::value<xcore::crc<32>::FromString("DEBUG")>; CmdCRC == crc )
+    }
+
+    //
+    // Debug
+    //
+    m_DebugType = debug_type::D0;
+    if (CmdLineParser.hasOption(hDebug))
+    {
+        if (auto result = CmdLineParser.getOptionArgAs<std::string>(hDebug, 0); std::holds_alternative<xerr>(result))
+            return std::get<xerr>(result);
+        else
         {
-            xcore::cstring BuildType;
+            std::string Type = std::get<std::string>(result);
 
-            xcore::string::Copy( BuildType, Cmd.getArgument( 0 ) );
-
-            if( BuildType == xcore::string::constant("D0") )
+            if (xstrtool::CompareI(Type, std::string_view("D0")) == 0)
             {
                 m_DebugType = debug_type::D0;
             }
-            else if( BuildType == xcore::string::constant("D1") )
+            else if (xstrtool::CompareI(Type, std::string_view("D1")) == 0)
             {
                 m_DebugType = debug_type::D1;
             }
-            else if( BuildType == xcore::string::constant("Dz") )
+            else if (xstrtool::CompareI(Type, std::string_view("Dz")) == 0)
             {
                 m_DebugType = debug_type::Dz;
             }
             else
             {
-                return xerr_failure_s("Debug Type not supported");
+                return xerr::create_f<state, "Debug Type not supported">();
             }
         }
-        else
-        {
-            // We must have forgotten a switch because we should not be able to reach this point
-            return xerr_failure_s("Compiler found unknown arguments");
-        }
-    }
-
-    if (UseDefaultTaget)
-    {
-        m_Target[static_cast<int>(xcore::target::platform::WINDOWS)].m_bValid = true;
     }
 
     //
@@ -426,26 +581,26 @@ xcore::err base::InternalParse( const int argc, const char *argv[] )
     //
     if (m_DebugType == debug_type::D1 || m_DebugType == debug_type::Dz)
     {
-        XLOG_CHANNEL_INFO(m_LogChannel, "Compiler command line options");
-        XLOG_CHANNEL_INFO(m_LogChannel, "PROJECT: %s", m_ProjectPaths.m_Project.c_str());
+        LogMessage(msg_type::INFO, "Compiler command line options" );
+        LogMessage(msg_type::INFO, std::format(L"PROJECT: {}", m_ProjectPaths.m_Project));
 
         {
-            std::string TargetString;
+            std::wstring TargetList;
             for (auto& E : m_Target)
             {
                 if (E.m_bValid)
                 {
-                    TargetString += xcore::target::getPlatformString(E.m_Platform);
-                    TargetString += " ";
+                    TargetList += xresource_pipeline::wplatform_v[static_cast<int>(E.m_Platform)];
+                    TargetList += L" ";
                 }
             }
-            XLOG_CHANNEL_INFO(m_LogChannel, "TARGETS: %s", TargetString.c_str() );
+            LogMessage(msg_type::INFO, std::format(L"Targets: {}", TargetList));
         }
 
-        XLOG_CHANNEL_INFO(m_LogChannel, "OUTPUT: %s", m_ProjectPaths.m_Output.c_str());
-        XLOG_CHANNEL_INFO(m_LogChannel, "DESCRIPTOR: %s", m_InputSrcDescriptorPath.c_str());
-        XLOG_CHANNEL_INFO(m_LogChannel, "OPTIMIZATION: %s", m_OptimizationType == optimization_type::O0 ? "O0" : m_OptimizationType == optimization_type::O1 ? "O1" : "Oz");
-        XLOG_CHANNEL_INFO(m_LogChannel, "DEBUG: %s", m_DebugType == debug_type::D0 ? "D0" : m_DebugType == debug_type::D1 ? "D1" : "Dz");
+        LogMessage(msg_type::INFO, std::format(L"OUTPUT: {}", m_ProjectPaths.m_Output));
+        LogMessage(msg_type::INFO, std::format(L"DESCRIPTOR: {}", m_InputSrcDescriptorPath));
+        LogMessage(msg_type::INFO, std::format(L"OPTIMIZATION: {}", m_OptimizationType == optimization_type::O0 ? L"O0" : m_OptimizationType == optimization_type::O1 ? L"O1" : L"Oz"));
+        LogMessage(msg_type::INFO, std::format(L"DEBUG: {}", m_DebugType == debug_type::D0 ? L"D0" : m_DebugType == debug_type::D1 ? L"D1" : L"Dz"));
     }
 
     return {};
@@ -453,31 +608,29 @@ xcore::err base::InternalParse( const int argc, const char *argv[] )
 
 //--------------------------------------------------------------------------
 
-xcore::cstring base::getDestinationPath( xcore::target::platform p ) const noexcept
+const std::wstring_view base::getDestinationPath( xresource_pipeline::platform p ) const noexcept
 {
     const int Index = static_cast<int>(p);
-    xassert( m_Target[Index].m_bValid );
-    xassert( m_Target[Index].m_Platform == p );
+    assert( m_Target[Index].m_bValid );
+    assert( m_Target[Index].m_Platform == p );
     return m_Target[Index].m_DataPath;
 }
 
 //--------------------------------------------------------------------------
 
-xcore::err base::Parse( int argc, const char *argv[] ) noexcept
+xerr base::Parse( int argc, const char *argv[] ) noexcept
 {
     try
     {
         if( auto Err = InternalParse( argc, argv ); Err )
         {
-            if( Err.getCode().getState<xresource_pipeline::error>() != xresource_pipeline::error::DISPLAY_HELP )
+            if( Err.getState<state>() == state::DISPLAY_HELP )
             {
-                // TODO: We should open the log file before this???
-                XLOG_CHANNEL_ERROR(m_LogChannel, "Parsing error (%s)", Err.getCode().m_pString);
+                Err.clear();
             }
             else
             {
-                // If we are displaying help we just return...
-                Err.clear();
+                LogMessage( msg_type::ERROR, Err.getMessage() );
             }
             
             return Err;
@@ -485,8 +638,8 @@ xcore::err base::Parse( int argc, const char *argv[] ) noexcept
     }
     catch (std::runtime_error RunTimeError)
     {
-        XLOG_CHANNEL_ERROR(m_LogChannel, "%s", RunTimeError.what());
-        return xerr_failure_s("FAILED: exception thrown exiting...");
+        LogMessage(msg_type::ERROR, std::format("{}", RunTimeError.what()));
+        return xerr::create_f<state, "FAILED: exception thrown exiting...">();
     }
 
     return {};
@@ -494,16 +647,16 @@ xcore::err base::Parse( int argc, const char *argv[] ) noexcept
 
 //--------------------------------------------------------------------------
 
-xcore::err base::CreatePath( const xcore::cstring& Path ) const noexcept
+xerr base::CreatePath( const std::wstring_view Path ) const noexcept
 {
     std::error_code         ec;
-    std::filesystem::path   path{ xcore::string::To<wchar_t>(Path).data() };
+    std::filesystem:: path   path{ Path };
 
     std::filesystem::create_directories(path, ec);
     if (ec)
     {
-        XLOG_CHANNEL_ERROR(m_LogChannel, "Fail to create a directory [%s] with error [%s]", Path.data(), ec.message().c_str());
-        return xerr_failure_s("Fail to create a directory");
+        LogMessage(msg_type::ERROR, std::format("Fail to create a directory [{}] with error [{}]", xstrtool::To(Path), ec.message() ));
+        return xerr::create_f<state,"Fail to create a directory">();
     }
 
     return {};
@@ -514,22 +667,22 @@ xcore::err base::CreatePath( const xcore::cstring& Path ) const noexcept
 void base::displayProgressBar(const char* pTitle, float progress) const noexcept
 {
     progress = std::clamp(progress, 0.0f, 1.0f);
-    constexpr auto total_chars_v = 40;
-    constexpr auto fill_progress = "========================================";
-    constexpr auto empty_progress = "                                        ";
-    constexpr auto bar_width = 35;
-    const auto     pos = static_cast<int>(bar_width * progress);
-    const auto     filled = total_chars_v - pos;
-    const auto     empty = total_chars_v - (bar_width - pos);
+    constexpr auto total_chars_v    = 40;
+    constexpr auto fill_progress    = "========================================";
+    constexpr auto empty_progress   = "                                        ";
+    constexpr auto bar_width        = 35;
+    const auto     pos              = static_cast<int>(bar_width * progress);
+    const auto     filled           = total_chars_v - pos;
+    const auto     empty            = total_chars_v - (bar_width - pos);
 
-    XLOG_CHANNEL_INFO(m_LogChannel, "\r%s: [%s>%s] %3d%%", pTitle, &fill_progress[filled], &empty_progress[empty], static_cast<int>(progress * 100.0));
+    LogMessage( msg_type::INFO, std::format("\r{}: [{}>{}] {:3}%", pTitle, &fill_progress[filled], &empty_progress[empty], static_cast<int>(progress * 100.0)) );
     if (progress >= 1) printf("\n");
 }
 
 
 //--------------------------------------------------------------------------
 
-xcore::err base::Compile( void ) noexcept
+xerr base::Compile( void ) noexcept
 {
     m_Timmer = std::chrono::steady_clock::now();
 
@@ -594,9 +747,9 @@ xcore::err base::Compile( void ) noexcept
         // Get the timer
         //
         {
-            XLOG_CHANNEL_INFO(m_LogChannel, "------------------------------------------------------------------");
-            XLOG_CHANNEL_INFO(m_LogChannel, " Start Compilation" );
-            XLOG_CHANNEL_INFO(m_LogChannel, "------------------------------------------------------------------" );
+            LogMessage(msg_type::INFO, "------------------------------------------------------------------");
+            LogMessage(msg_type::INFO, " Start Compilation");
+            LogMessage(msg_type::INFO, "------------------------------------------------------------------");
         }
 
         //
@@ -632,7 +785,8 @@ xcore::err base::Compile( void ) noexcept
                 std::ranges::transform(S, S.begin(), [](auto c){ return std::tolower(c); });
 
 
-            if (auto Err = m_Dependencies.Serialize( false, xcore::string::Fmt("%s/dependencies.txt", m_ResourceLogPath.data()).data(), xproperty::settings::context{} ); Err)
+            xproperty::settings::context C{};
+            if (auto Err = m_Dependencies.Serialize( false, std::format( L"{}/dependencies.txt", m_ResourceLogPath), C ); Err)
                 return Err;
         }
 
@@ -640,15 +794,16 @@ xcore::err base::Compile( void ) noexcept
         // Get the timer
         //
         {
-            XLOG_CHANNEL_INFO(m_LogChannel, "------------------------------------------------------------------");
-            XLOG_CHANNEL_INFO(m_LogChannel, " Compilation Time: %.3fs", std::chrono::duration<float>(std::chrono::steady_clock::now() - m_Timmer).count());
-            XLOG_CHANNEL_INFO(m_LogChannel, "------------------------------------------------------------------");
+            LogMessage(msg_type::INFO, "------------------------------------------------------------------");
+            LogMessage(msg_type::INFO, std::format("Compilation Time: {:.3f}s", std::chrono::duration<float>(std::chrono::steady_clock::now() - m_Timmer).count()) );
+            LogMessage(msg_type::INFO, "------------------------------------------------------------------");
         }
     }
     catch (std::runtime_error RunTimeError)
     {
-        XLOG_CHANNEL_ERROR(m_LogChannel, "%s", RunTimeError.what() );
-        return xerr_failure_s("FAILED: exception thrown exiting...");
+        LogMessage(msg_type::ERROR, std::format("{}", RunTimeError.what()));
+
+        return xerr::create_f<state, "FAILED: exception thrown exiting...">();
     }
 
     printf("[COMPILATION_SUCCESS]\n");

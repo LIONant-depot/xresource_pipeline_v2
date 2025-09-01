@@ -28,7 +28,7 @@ namespace xresource_pipeline
 
     struct info : descriptor::base
     {
-        static constexpr auto       type_guid_v     = xresource::type_guid{ xcore::guid::unit("Info").m_Value };
+        static constexpr auto       type_guid_v     = xresource::type_guid{ "Info" };
 
         xresource::full_guid                m_Guid          {};
         std::string                         m_Name          {};
