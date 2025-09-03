@@ -25,7 +25,7 @@ namespace xresource_pipeline
         {
             if (GUID.empty())
             {
-                GUID = xresource::instance_guid::GenerateGUID();
+                GUID = xresource::instance_guid::GenerateGUIDCopy();
             }
             else
             {

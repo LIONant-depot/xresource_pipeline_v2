@@ -114,8 +114,8 @@ namespace xresource_pipeline
 #endif
 #include "dependencies/xproperty/source/examples/xcore_sprop_serializer/xcore_sprop_serializer.h"
 
-#include "dependencies/xresource/source/xresource_guid.h"
-#include "dependencies/xresource/source/xresource_guid_properties.h"
+#include "dependencies/xresource_guid/source/xresource_guid.h"
+#include "dependencies/xresource_guid/source/xresource_guid_properties.h"
 
 
 #include "xresource_pipeline_tag.h"
