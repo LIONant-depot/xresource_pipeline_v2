@@ -455,7 +455,6 @@ xerr base::InternalParse( const int argc, const char *argv[] )
         m_Target[static_cast<int>(xresource_pipeline::platform::WINDOWS)].m_bValid = true;
     }
     
-
     //
     // Project
     //
@@ -475,6 +474,7 @@ xerr base::InternalParse( const int argc, const char *argv[] )
             xstrtool::PathNormalize(m_ProjectPaths.m_Project);
         }
     }
+    assert(!m_ProjectPaths.m_Project.empty());
 
     //
     // Output
