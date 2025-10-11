@@ -101,6 +101,8 @@ namespace xresource_pipeline::compiler
         platform_list                                           m_Target                    {};
         dependencies                                            m_Dependencies              {};
 
+        xresource::instance_guid                                m_ResourceGuid              {};
+
     protected:
 
         friend void LogFunction(msg_type Type, std::string_view String, std::uint32_t Line, std::string_view file) noexcept;

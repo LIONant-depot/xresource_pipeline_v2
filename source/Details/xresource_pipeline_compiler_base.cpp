@@ -177,6 +177,14 @@ xerr base::setupPaths( void ) noexcept
         m_ResourcePartialPath = xstrtool::CopyN( std::wstring_view( m_InputSrcDescriptorPath.begin() + iStartString+1, m_InputSrcDescriptorPath.end()), iEndString - iStartString - 1);
     }
 
+    {
+        auto GUIDInstance = xstrtool::To(m_ResourcePartialPath.substr( 1+m_ResourcePartialPath.rfind(L"/") ));
+        auto Result       = std::from_chars(GUIDInstance.data(), GUIDInstance.data() + GUIDInstance.size(), m_ResourceGuid.m_Value, 16);
+
+        if (Result.ec != std::errc())
+            return xerr::create_f<state, "Fail to convert the resource path into a regular GUID">();
+    }
+
     //
     // Get the resource type string
     //
