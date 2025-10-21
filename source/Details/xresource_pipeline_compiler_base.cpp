@@ -261,7 +261,7 @@ xerr base::setupPaths( void ) noexcept
         {
             if (E.m_bValid)
             {
-                // This should end up like... "FullPath/Project.lion_project/Cache/Platforms/Windows/ResourceType/0F/23"
+                // This should end up like... "FullPath/Project.lionprj/Cache/Platforms/Windows/ResourceType/0F/23"
                 E.m_DataPath = std::format(L"{}/{}/{}"
                     , m_ProjectPaths.m_ResourcesPlatforms
                     , wplatform_v[static_cast<int>(E.m_Platform)]
@@ -273,7 +273,7 @@ xerr base::setupPaths( void ) noexcept
                     return Err;
 
                 // OK then now everything including the final file name (no extension)
-                // This should end up like... "FullPath/Project.lion_project/Cache/Platforms/Windows/ResourceType/0F/23/4fdsdf230F"
+                // This should end up like... "FullPath/Project.lionprj/Cache/Platforms/Windows/ResourceType/0F/23/4fdsdf230F"
                 E.m_DataPath = std::format(L"{}/{}/{}"
                     , m_ProjectPaths.m_ResourcesPlatforms
                     , wplatform_v[static_cast<int>(E.m_Platform)]
@@ -472,10 +472,10 @@ xerr base::InternalParse( const int argc, const char *argv[] )
             return std::get<xerr>(result);
         else
         {
-            if ( xstrtool::findI(std::get<std::string>(result), ".lion_project") == std::string::npos 
-              && xstrtool::findI(std::get<std::string>(result), ".lion_library") == std::string::npos )
+            if ( xstrtool::findI(std::get<std::string>(result), ".lionprj") == std::string::npos 
+              && xstrtool::findI(std::get<std::string>(result), ".lionlib") == std::string::npos )
             {
-                return xerr::create_f<state, "I got a path in the PROJECT switch that is not a .lion_project or .lion_library path">();
+                return xerr::create_f<state, "I got a path in the PROJECT switch that is not a .lionprj or .lionlib path">();
             }
 
             m_ProjectPaths.m_Project = xstrtool::To(std::get<std::string>(result));
