@@ -109,9 +109,6 @@ namespace xresource_pipeline
 
 #include "dependencies/xstrtool/source/xstrtool.h"
 #include "dependencies/xproperty/source/xcore/my_properties.h"
-#ifndef XRESOURCE_PIPELINE_NO_COMPILER
-    #include "dependencies/xproperty/source/examples/imgui/my_property_ui_null.h"
-#endif
 #include "dependencies/xproperty/source/sprop/property_sprop_xtextfile_serializer.h"
 
 #include "dependencies/xresource_guid/source/xresource_guid.h"
