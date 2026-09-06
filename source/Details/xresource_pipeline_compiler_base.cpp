@@ -154,9 +154,14 @@ xerr base::setupPaths( void ) noexcept
     {
         std::size_t iStartString;
         std::size_t iEndString;
-        if( xstrtool::findI( m_InputSrcDescriptorPath, L"Descriptors") != std::string::npos )
+        if( auto DescriptorsPos = xstrtool::findI( m_InputSrcDescriptorPath, L"Descriptors"); DescriptorsPos != std::string::npos )
         {
-            iStartString = xstrtool::findI( m_InputSrcDescriptorPath, L"/");
+            // Skip past this "Descriptors" segment itself (not just the path's first '/') - a virtual/
+            // system descriptor's path is "Cache/Descriptors/<Type>/...", where the first '/' lands
+            // right after "Cache", before "Descriptors" ever appears; taking the first '/' unconditionally
+            // left "Descriptors" itself inside m_ResourcePartialPath, producing an extra bogus
+            // "Descriptors/" segment in the compiled resource's output path.
+            iStartString = xstrtool::findI( m_InputSrcDescriptorPath, L"/", DescriptorsPos + std::wstring_view(L"Descriptors").length());
         }
         else
         {

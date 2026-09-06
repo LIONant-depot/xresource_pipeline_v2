@@ -1,3 +1,5 @@
+#pragma once
+
 namespace xresource_pipeline
 {
     struct factory_base
