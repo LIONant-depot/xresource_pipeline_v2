@@ -464,6 +464,35 @@ namespace e10::commands
 
         xcmdline::parser::handle m_hLibrary;
     };
+
+    //================================================================================================
+    // ListLibraries - every library the project has open: its guid (what -Library takes), its path, whether it is the project's own root,
+    // and the libraries it depends on.
+    // Usage: ListLibraries
+    //================================================================================================
+    struct list_libraries_query_cmd : xundo::query_command_base
+    {
+        list_libraries_query_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::query_command_base(System, "ListLibraries", pDataBase) {}
+        const char* getCommandHelp() const noexcept override { return "Lists every open library: guid, path, whether it is the project root, and its dependencies. Usage: ListLibraries"; }
+        void RegisterArguments() noexcept override {}
+
+        std::string Query() noexcept override
+        {
+            std::string Out;
+            for (auto& Lib : e10::g_LibMgr.m_mLibraryDB)
+            {
+                const auto& L = Lib.second->m_Library;
+                Out += std::format("{}  {}{}", e10::commands::FormatLibraryGuid(Lib.first), xstrtool::To(L.m_Path), L.m_bRootProject ? "  [project root]" : "");
+                if (!L.m_ParentLibraries.empty())
+                {
+                    Out += "  depends on:";
+                    for (auto& P : L.m_ParentLibraries) Out += " " + e10::commands::FormatLibraryGuid(P.m_GUID);
+                }
+                Out += '\n';
+            }
+            return Out.empty() ? "(no open libraries)" : Out;
+        }
+    };
 }
 
 #endif // E10_COMMANDS_LIBRARY_DEPENDENCY_H
