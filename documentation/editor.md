@@ -13,9 +13,21 @@ not part of the resource compilers); nothing in `source/` (the pipeline itself) 
 | `E10_AssetBrowser.h` | the browser window and its extension hooks (`m_OnRenameAsset`, `m_OnGetAssetStatusBadge`, ...) | ImGui |
 | `E10_asset_browser_*_tab.h` | its tabs: Resources (virtual tree), Assets (files), Compilation, Project Settings (plugins), Search | ImGui |
 | `E10_AssetOleDrag.h` | dragging assets out to Windows Explorer | ImGui / Win32 |
+| `E10_CommandGuids.h` | how the resource commands write and read library and asset guids | no |
+| `E10_Commands_Assets.h`, `E10_Commands_AssetFiles.h` | undoable commands: create / rename / move / delete / restore assets, and the same for raw files under a library | no |
+| `E10_Commands_Compilation.h` | commands that drive the compile queue (`RecompileAll`, `CompileStart`, `CompileStatus`, ...) | no |
+| `E10_SourceControlStatus.h` | background scans that fill the source control cache, and the per-library workspace sessions | no |
+| `E10_Commands_SourceControl.h` | commit / pull / push / lock / unlock / revert as commands | no |
+| `E10_Panel_SourceControl.h` | the Source Control panel (depots, changelists, file rows) | ImGui |
+| `E10_AssetBrowserCallbacks.h` | `RegisterAssetBrowserCallbacks` and `RegisterSourceControlCallbacks`: wire the browser's `m_On...` hooks to an undo system | ImGui |
 
 The `E10_` / `e10::` names are historical (the code grew out of xGPU's example E10); the manager and the views are the
 resource pipeline's editor and are meant to be reused by every editor.
+
+The commands derive from `xundo::command_base` / `query_command_base` and need no editor state: the `void*` database an
+editor passes when it builds its command set is simply not used by them. The source control code lives here rather than in
+`xsource_control` because it needs `library_mgr` and the browser, and this depot already depends on `xsource_control`
+(`E10_SourceControlCache.h`); `xsource_control` stays the headless provider.
 
 ## Using it
 
