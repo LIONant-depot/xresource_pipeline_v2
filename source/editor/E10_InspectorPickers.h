@@ -61,8 +61,11 @@ namespace e10
 
         if (auto SelectedAsset = g_AssetBrowserPopup.getSelectedAsset(); SelectedAsset.empty() == false)
         {
+            // The property's own type is always accepted (Output.m_Type): a plain resource reference has no filter list of its own
+            bool bAccept = SelectedAsset.m_Type == Output.m_Type;
             for (auto& Type : Filters)
-                if (SelectedAsset.m_Type == Type) { Output = SelectedAsset; break; }
+                if (SelectedAsset.m_Type == Type) { bAccept = true; break; }
+            if (bAccept) Output = SelectedAsset;
         }
 
         Open = g_AssetBrowserPopup.isVisible();
