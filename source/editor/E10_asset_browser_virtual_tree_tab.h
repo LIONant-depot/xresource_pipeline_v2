@@ -1538,6 +1538,7 @@ namespace e10
                 std::string             m_ResourceName;
                 std::string_view        m_TypeNameView;
                 e10::plugin_icon_ref    m_Icon;
+                e10::plugin_icon_ref    m_Thumbnail;    // set for this frame only, right before drawing - see m_OnRequestThumbnail
                 xresource::full_guid    m_ResourceGUID;
                 float                   m_Distance;
                 bool                    m_bHasChildren:1
@@ -1991,6 +1992,17 @@ namespace e10
                 bool       bRenameCommit   = false;
                 bool       bRenameCancel   = false;
 
+                // A per-resource thumbnail, only for a tile actually on screen right now - a resource never
+                // scrolled into view never has one requested at all. TempNodes is rebuilt fresh every frame
+                // (no virtualization here), so this runs, and re-checks visibility, every single frame.
+                if (m_Browser.m_OnRequestThumbnail)
+                {
+                    const ImVec2 TileMin = ImGui::GetCursorScreenPos();
+                    if (ImGui::IsRectVisible(TileMin, ImVec2(TileMin.x + button_sz.x, TileMin.y + button_sz.y)))
+                        E.m_Thumbnail = m_Browser.m_OnRequestThumbnail(E.m_ResourceGUID);
+                }
+                const e10::plugin_icon_ref& DrawIcon = E.m_Thumbnail.isValid() ? E.m_Thumbnail : E.m_Icon;
+
                 int PressType = 0;
                 if (!bArrowClicked)
                 {
@@ -1999,7 +2011,7 @@ namespace e10
                                                   , bIsRenamingThis ? m_RenameNewName.data() : nullptr
                                                   , bIsRenamingThis ? m_RenameNewName.size() : 0
                                                   , bIsRenamingThis && m_RenameFirstOpen
-                                                  , &bRenameCommit, &bRenameCancel, E.m_Icon, E.m_StatusBadge, E.m_LockBadge); PressType == 2)
+                                                  , &bRenameCommit, &bRenameCancel, DrawIcon, E.m_StatusBadge, E.m_LockBadge); PressType == 2)
                 {
                     if (E.m_ResourceGUID.m_Type == e10::folder::type_guid_v)
                     {
@@ -2083,7 +2095,7 @@ namespace e10
                                  , bIsRenamingThis ? m_RenameNewName.data() : nullptr
                                  , bIsRenamingThis ? m_RenameNewName.size() : 0
                                  , bIsRenamingThis && m_RenameFirstOpen
-                                 , &bRenameCommit, &bRenameCancel, E.m_Icon, E.m_StatusBadge, E.m_LockBadge);
+                                 , &bRenameCommit, &bRenameCancel, DrawIcon, E.m_StatusBadge, E.m_LockBadge);
                     ImGui::PopStyleColor();
                     m_IsExpanded[E.m_ResourceGUID] = !bExpandedBefore;
                 }
@@ -2145,7 +2157,7 @@ namespace e10
                         {
                             ImGui::PushStyleColor(ImGuiCol_Text, LabelColor);
                             WrappedButton2(E.m_ResourceGUID.m_Instance, std::format("{}", StringOne).c_str(), button_sz, Color, pIcon, held, E.m_bModified
-                                         , nullptr, 0, false, nullptr, nullptr, E.m_Icon, E.m_StatusBadge, E.m_LockBadge);
+                                         , nullptr, 0, false, nullptr, nullptr, DrawIcon, E.m_StatusBadge, E.m_LockBadge);
                             ImGui::PopStyleColor();
                         }
                         ImGui::EndDragDropSource();

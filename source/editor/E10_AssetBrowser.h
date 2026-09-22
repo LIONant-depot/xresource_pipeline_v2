@@ -1270,6 +1270,14 @@ namespace e10
         // anything about what an "editor" is.
         std::function<void(library::guid, xresource::full_guid)> m_OnOpenAsset;
 
+        // Optional hook - a per-RESOURCE thumbnail (as opposed to the shared per-TYPE icon atlas this file
+        // already knows about) for one row, if that resource's type has one and it happens to be ready yet.
+        // Default-empty means today's exact behavior (the type icon, always) - same dependency-inversion
+        // shape as m_OnOpenAsset: a host (E29 today) wires this to its own thumbnail cache/generation system
+        // without this shared browser file needing to know anything about how a thumbnail gets made.
+        // Returns an invalid (default-constructed) plugin_icon_ref when nothing is ready yet.
+        std::function<plugin_icon_ref(xresource::full_guid)> m_OnRequestThumbnail;
+
         // Optional hooks - manual Lock/Unlock from the Asset Tree's own right-click menu (direct user
         // request: "we should always give the user the manual option to do it... just in case the user
         // is doing something special"). Default-empty means the menu items simply aren't offered. Fire-
