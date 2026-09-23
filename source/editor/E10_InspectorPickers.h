@@ -53,6 +53,41 @@ namespace e10
     // ShowAsPopup(...) directly on the click itself instead of routing through this function.
     inline void ResourceBrowserPopup(const void* pUID, bool& Open, xresource::full_guid& Output, std::span<const xresource::type_guid> Filters)
     {
+        // Drag-and-drop onto this property's own wigzmo button, from a resource tile dragged out of the
+        // asset browser (E10_asset_browser_virtual_tree_tab.h's own "DESCRIPTOR_GUID" payload). This was
+        // simply never implemented here - confirmed live: every WireResourcePickerCallbacks consumer
+        // (every editor using the generic picker, not just this one) could only ever assign a reference
+        // by clicking the button to open the browse popup; dragging silently did nothing, not because of
+        // any ID/state bug, but because this function never checked for a drag payload at all. Mirrors
+        // xgpu_editor_resource_picker.h's own ResourceBrowserPopup (E21's separate, drag-drop-capable
+        // picker) - same payload struct/type, so a tile dragged from the browser works against either.
+        if (ImGui::BeginDragDropTarget())
+        {
+            struct drag_and_drop_folder_payload_t
+            {
+                e10::folder::guid    m_Parent;
+                xresource::full_guid m_Source;
+                bool                 m_bSelection;
+            };
+
+            if (const ImGuiPayload* payload = ImGui::GetDragDropPayload(); payload && payload->IsDataType("DESCRIPTOR_GUID"))
+            {
+                IM_ASSERT(payload->DataSize == sizeof(drag_and_drop_folder_payload_t));
+                auto& PayloadData = *static_cast<const drag_and_drop_folder_payload_t*>(payload->Data);
+
+                bool bAccept = Output.m_Type == PayloadData.m_Source.m_Type;
+                if (not bAccept) for (auto& Type : Filters) if (PayloadData.m_Source.m_Type == Type) { bAccept = true; break; }
+
+                if (bAccept && ImGui::AcceptDragDropPayload("DESCRIPTOR_GUID"))
+                {
+                    Output = PayloadData.m_Source;
+                    if (g_AssetBrowserPopup.isVisible()) g_AssetBrowserPopup.ClosePopup();
+                    Open = false;
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+
         if (g_AssetBrowserPopup.getCurrentID() != nullptr && g_AssetBrowserPopup.getCurrentID() != pUID)
             return;
 

@@ -118,7 +118,14 @@ namespace e10
 
             ImGui::BeginGroup();
 
-            ImGuiID id = static_cast<ImGuiID>(G.m_Value);
+            // GetID (not a raw cast of the GUID) so this tile's id is scoped to whichever window/popup is
+            // CURRENTLY rendering it, via ImGui's own id-stack hashing - a raw id doesn't participate in
+            // that stack at all, so the exact same resource tile drawn in two places at once (e.g. the
+            // docked Resources tab AND a resource-picker popup filtered to show it too) produced two
+            // items with the literal same id - confirmed live: ImGui's own "2 visible items with
+            // conflicting ID" assert, and a knock-on failure of drag-and-drop onto anything relying on
+            // ImGui's "last submitted item" state, which an id collision leaves undefined for the loser.
+            ImGuiID id = ImGui::GetID(reinterpret_cast<void*>(static_cast<std::uintptr_t>(G.m_Value)));
 
             // Calculate padding
             ImVec2 padding = ImGui::GetStyle().FramePadding;
