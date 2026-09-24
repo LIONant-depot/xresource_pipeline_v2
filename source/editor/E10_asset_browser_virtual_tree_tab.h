@@ -106,7 +106,8 @@ namespace e10
                                  , bool* pOutRenameCommit = nullptr, bool* pOutRenameCancel = nullptr
                                  , e10::plugin_icon_ref AtlasIcon = {}
                                  , e10::asset_status_badge StatusBadge = e10::asset_status_badge::None
-                                 , e10::asset_lock_badge LockBadge = e10::asset_lock_badge::None )
+                                 , e10::asset_lock_badge LockBadge = e10::asset_lock_badge::None
+                                 , e10::plugin_icon_ref LabelTypeIcon = {} )
         {
             ImGuiContext& g = *ImGui::GetCurrentContext();
             ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -297,18 +298,43 @@ namespace e10
             }
             else
             {
-                // print the name of the asset
+                // print the name of the asset. When the big tile image is a per-resource computed
+                // thumbnail (not the shared type glyph), the caller passes LabelTypeIcon so we can
+                // show the type next to the name. Leading spaces are baked into the wrap string so
+                // the wrapping-text box still measures correctly and the type icon is drawn on top
+                // of that reserved gap (direct user design). Type-as-thumbnail tiles leave
+                // LabelTypeIcon empty and keep today's plain label.
                 const float LetterWidth   = ImGui::CalcTextSize("A").x;
                 const int   NCharsPerLine = static_cast<int>(size.x / LetterWidth);
-                const int   StrLen        = static_cast<int>(std::strlen(label));
                 const int   MaxLines      = c_LabelMaxLines;
+
+                const bool  bLabelTypeIcon = LabelTypeIcon.isValid();
+                const float TypeIconSize   = ImGui::GetTextLineHeight();
+                const float TypeIconGap    = 2.0f;
+                std::string PaddedLabel;
+                const char* draw_label = label;
+                int         SpacerEnd  = 0; // first index past the leading type-icon spaces
+                if (bLabelTypeIcon)
+                {
+                    const float SpaceW  = ImGui::CalcTextSize(" ").x;
+                    const int   NSpaces = std::max(1, static_cast<int>((TypeIconSize + TypeIconGap + SpaceW - 1.0f) / std::max(SpaceW, 1.0f)));
+                    PaddedLabel.assign(static_cast<size_t>(NSpaces), ' ');
+                    PaddedLabel += label;
+                    draw_label = PaddedLabel.c_str();
+                    SpacerEnd  = NSpaces;
+                }
+
+                const int StrLen = static_cast<int>(std::strlen(draw_label));
+                ImVec2 FirstLineScreen = ImGui::GetCursorScreenPos();
 
                 if (StrLen > NCharsPerLine)
                 {
                     // Word-aware wrap - break at the last space within budget so a name never
                     // splits mid-word (a plain fixed-character-count wrap did that, e.g.
                     // "Base" -> "Ba"/"se"). The final line gets an ellipsis if content still
-                    // remains after MaxLines.
+                    // remains after MaxLines. Leading type-icon spaces (if any) sit on line 0
+                    // only, so the icon overlays the first line's reserved gap - and must NOT
+                    // count as a word-break opportunity (that would leave line 0 as only spaces).
                     int LineStart = 0;
                     for (int Line = 0; Line < MaxLines && LineStart < StrLen; ++Line)
                     {
@@ -320,29 +346,44 @@ namespace e10
                         else
                         {
                             int Break = End;
-                            while (Break > LineStart && label[Break] != ' ') --Break;
-                            if (Break > LineStart) End = Break;
+                            while (Break > LineStart && draw_label[Break] != ' ') --Break;
+                            if (Break > LineStart && !(Line == 0 && Break < SpacerEnd))
+                                End = Break;
                         }
 
                         const bool bLastLine  = (Line == MaxLines - 1);
                         const bool bOverflows = bLastLine && End < StrLen;
                         if (bOverflows && End > LineStart + 1)
-                            ImGui::Text("%.*s...", End - LineStart - 1, label + LineStart);
+                            ImGui::Text("%.*s...", End - LineStart - 1, draw_label + LineStart);
                         else
-                            ImGui::Text("%.*s", End - LineStart, label + LineStart);
+                            ImGui::Text("%.*s", End - LineStart, draw_label + LineStart);
 
                         LineStart = End;
-                        while (LineStart < StrLen && label[LineStart] == ' ') ++LineStart;
+                        while (LineStart < StrLen && draw_label[LineStart] == ' ') ++LineStart;
                     }
                 }
                 else
                 {
-                    // static constexpr char spaces[] = "                                              ";
-                    // const int NSpaces = static_cast<int>((NCharsPerLine - StrLen)/2.0 + 1.5f);
-                    // ImGui::Text("%s%s", &spaces[sizeof(spaces) - NSpaces], label);
-
                     ImGui::SetCursorPosX(ImGui::GetCursorPosX() + LetterWidth * ((NCharsPerLine - StrLen) / 2.0f+0.5f));
-                    ImGui::Text("%s", label);
+                    FirstLineScreen = ImGui::GetCursorScreenPos();
+                    ImGui::Text("%s", draw_label);
+                }
+
+                if (bLabelTypeIcon)
+                {
+                    // Overlay the type glyph on the leading spaces of the first wrapped line.
+                    // Vertically center on that line; tint with the same type Color as the big
+                    // type-as-thumbnail path so computed-thumb tiles still read as that type.
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    const float LineH = ImGui::GetTextLineHeight();
+                    const float IconX = FirstLineScreen.x;
+                    const float IconY = FirstLineScreen.y + (LineH - TypeIconSize) * 0.5f;
+                    dl->AddImage((ImTextureRef)(void*)LabelTypeIcon.m_pTexture
+                               , ImVec2(IconX, IconY)
+                               , ImVec2(IconX + TypeIconSize, IconY + TypeIconSize)
+                               , ImVec2(LabelTypeIcon.m_U0, LabelTypeIcon.m_V0)
+                               , ImVec2(LabelTypeIcon.m_U1, LabelTypeIcon.m_V1)
+                               , Color);
                 }
             }
 
@@ -2009,6 +2050,9 @@ namespace e10
                         E.m_Thumbnail = m_Browser.m_OnRequestThumbnail(E.m_ResourceGUID);
                 }
                 const e10::plugin_icon_ref& DrawIcon = E.m_Thumbnail.isValid() ? E.m_Thumbnail : E.m_Icon;
+                // Only when the big image is a computed per-resource thumbnail - type-as-thumbnail
+                // tiles already show the type glyph up top, so they get no label prefix icon.
+                const e10::plugin_icon_ref LabelTypeIcon = E.m_Thumbnail.isValid() ? E.m_Icon : e10::plugin_icon_ref{};
 
                 int PressType = 0;
                 if (!bArrowClicked)
@@ -2018,7 +2062,7 @@ namespace e10
                                                   , bIsRenamingThis ? m_RenameNewName.data() : nullptr
                                                   , bIsRenamingThis ? m_RenameNewName.size() : 0
                                                   , bIsRenamingThis && m_RenameFirstOpen
-                                                  , &bRenameCommit, &bRenameCancel, DrawIcon, E.m_StatusBadge, E.m_LockBadge); PressType == 2)
+                                                  , &bRenameCommit, &bRenameCancel, DrawIcon, E.m_StatusBadge, E.m_LockBadge, LabelTypeIcon); PressType == 2)
                 {
                     if (E.m_ResourceGUID.m_Type == e10::folder::type_guid_v)
                     {
@@ -2102,7 +2146,7 @@ namespace e10
                                  , bIsRenamingThis ? m_RenameNewName.data() : nullptr
                                  , bIsRenamingThis ? m_RenameNewName.size() : 0
                                  , bIsRenamingThis && m_RenameFirstOpen
-                                 , &bRenameCommit, &bRenameCancel, DrawIcon, E.m_StatusBadge, E.m_LockBadge);
+                                 , &bRenameCommit, &bRenameCancel, DrawIcon, E.m_StatusBadge, E.m_LockBadge, LabelTypeIcon);
                     ImGui::PopStyleColor();
                     m_IsExpanded[E.m_ResourceGUID] = !bExpandedBefore;
                 }
@@ -2164,7 +2208,7 @@ namespace e10
                         {
                             ImGui::PushStyleColor(ImGuiCol_Text, LabelColor);
                             WrappedButton2(E.m_ResourceGUID.m_Instance, std::format("{}", StringOne).c_str(), button_sz, Color, pIcon, held, E.m_bModified
-                                         , nullptr, 0, false, nullptr, nullptr, DrawIcon, E.m_StatusBadge, E.m_LockBadge);
+                                         , nullptr, 0, false, nullptr, nullptr, DrawIcon, E.m_StatusBadge, E.m_LockBadge, LabelTypeIcon);
                             ImGui::PopStyleColor();
                         }
                         ImGui::EndDragDropSource();
