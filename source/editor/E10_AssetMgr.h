@@ -1013,14 +1013,8 @@ namespace e10
             // showing a perpetual red "Failed" badge for a resource that was never meant to compile.
             if (HasNoCompiler(InfoNode.m_Info.m_Guid.m_Type))
             {
-                printf("[CompileQueue] SKIP guid=%016llX%016llX HasNoCompiler=true\n"
-                    , static_cast<unsigned long long>(InfoNode.m_Info.m_Guid.m_Instance.m_Value)
-                    , static_cast<unsigned long long>(InfoNode.m_Info.m_Guid.m_Type.m_Value));
                 return false;
             }
-            printf("[CompileQueue] QUEUE guid=%016llX%016llX\n"
-                , static_cast<unsigned long long>(InfoNode.m_Info.m_Guid.m_Instance.m_Value)
-                , static_cast<unsigned long long>(InfoNode.m_Info.m_Guid.m_Type.m_Value));
 
             // Already compiling, OR already sitting in the queue waiting to compile - never push a
             // second entry for the same resource. REAL BUG FOUND LIVE (2026-09-11): this used to only
@@ -3830,11 +3824,6 @@ namespace e10
                     , static_cast<unsigned long long>(NewEntry.m_Entry.m_FullGuid.m_Type.m_Value));
                 return;
             }
-            printf("[CompileQueue] CompilingThreadWorker: getNodeInfo OK guid=%016llX%016llX DescriptorPath=%ls\n"
-                , static_cast<unsigned long long>(NewEntry.m_Entry.m_FullGuid.m_Instance.m_Value)
-                , static_cast<unsigned long long>(NewEntry.m_Entry.m_FullGuid.m_Type.m_Value)
-                , DescriptorPath.c_str());
-
 
             // Add the entry into the compilation list
             {
