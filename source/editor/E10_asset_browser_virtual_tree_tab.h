@@ -2756,21 +2756,56 @@ namespace e10
                     e10::PlaceTooltipAwayFromEdges();
                     ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
                     ImGui::BeginTooltip();
+
+                    const bool bHasThumbnail = E.m_Thumbnail.isValid();
+                    const auto Row = [](const char* pLabel, const std::string& Value) noexcept
+                    {
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("%s", pLabel);
+                        ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(Value.c_str());
+                    };
+                    const std::string TypeNameText = E.m_TypeNameView.empty() ? std::string("<Unknown>") : std::string(E.m_TypeNameView);
+
+                    // A real per-resource thumbnail (not the generic type icon/glyph every tile falls
+                    // back to) gets a big preview at the top of the tooltip - explicit user request, "a
+                    // nice big look at the icon". Same texture/UV rect the tile itself draws small
+                    // (DrawIcon/E.m_Thumbnail above), just at the thumbnail cache's own native
+                    // resolution instead of tile size, and with no tint (WrappedButton2's Color tint is
+                    // for the type-glyph/atlas-icon path, not for showing a rendered thumbnail as-is).
+                    // The 4 identity fields sit beside it (explicit follow-up request) instead of below
+                    // in the main table, so they read together with the image at a glance; every other
+                    // field stays in the full-width table underneath either way.
+                    if (bHasThumbnail)
+                    {
+                        constexpr float PreviewSize = 128.0f;
+                        ImGui::Image((ImTextureRef)(void*)E.m_Thumbnail.m_pTexture, ImVec2(PreviewSize, PreviewSize)
+                                    , ImVec2(E.m_Thumbnail.m_U0, E.m_Thumbnail.m_V0), ImVec2(E.m_Thumbnail.m_U1, E.m_Thumbnail.m_V1));
+                        ImGui::SameLine();
+                        ImGui::BeginGroup();
+                        if (ImGui::BeginTable("##ResourceTooltipHeader", 2, ImGuiTableFlags_SizingFixedFit))
+                        {
+                            Row("Instance Name:", StringOne);
+                            Row("Type Name:",     TypeNameText);
+                            Row("Instance GUID:", InstanceGuidText);
+                            Row("Type GUID:",     TypeGuidText);
+                            ImGui::EndTable();
+                        }
+                        ImGui::EndGroup();
+                        ImGui::Spacing();
+                    }
+
                     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440.0f);
 
                     if (ImGui::BeginTable("##ResourceTooltip", 2, ImGuiTableFlags_SizingFixedFit))
                     {
-                        auto Row = [](const char* pLabel, const std::string& Value) noexcept
+                        // Already shown beside the image above when there is one - not repeated here.
+                        if (!bHasThumbnail)
                         {
-                            ImGui::TableNextRow();
-                            ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("%s", pLabel);
-                            ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(Value.c_str());
-                        };
-
-                        Row("Instance Name:",         StringOne);
-                        Row("Type Name:",              E.m_TypeNameView.empty() ? std::string("<Unknown>") : std::string(E.m_TypeNameView));
-                        Row("Instance GUID:",          InstanceGuidText);
-                        Row("Type GUID:",              TypeGuidText);
+                            Row("Instance Name:", StringOne);
+                            Row("Type Name:",     TypeNameText);
+                            Row("Instance GUID:", InstanceGuidText);
+                            Row("Type GUID:",     TypeGuidText);
+                        }
                         Row("Info Last Read:",         InfoReadText);
                         Row("Info Last Write:",        InfoWriteText);
                         Row("Descriptor Last Write:",  DescWriteText);
