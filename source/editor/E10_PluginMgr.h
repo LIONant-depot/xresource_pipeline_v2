@@ -2,7 +2,9 @@
 #define PLUGIN_MGR_HPP
 #pragma once
 
-#define NOMINMAX
+#ifndef NOMINMAX
+    #define NOMINMAX
+#endif
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #ifdef ERROR
