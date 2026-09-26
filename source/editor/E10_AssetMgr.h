@@ -4252,7 +4252,10 @@ namespace e10
     {
         if (auto pPlugin = m_CompilationInstance.m_LibraryMgr.m_AssetPluginsDB.find(Type); pPlugin)
             return pPlugin->m_DebugCompiler.empty() && pPlugin->m_ReleaseCompiler.empty();
-        return false;
+        // Missing plugin (failed Plugin.config load, orphan descriptor type, etc.): treat as
+        // descriptor-only so AddToCompilationQueueIfNeeded never calls getQueueIndexFromType
+        // and asserts. Prefer fixing registration; this is the safe fallback.
+        return true;
     }
 
 
