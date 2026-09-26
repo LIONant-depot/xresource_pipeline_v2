@@ -825,9 +825,12 @@ namespace e10
                 if (ImGui::MenuItem(E.m_TypeName.c_str()))
                 {
                     auto LibGUID            = m_SelectedLibrary.empty() ? m_AssetMgr.m_ProjectGUID : m_SelectedLibrary;
+                    // Default name so Create Folder / Add Resource don't ship an empty -Name through
+                    // the command layer (empty Base64 is a missing cmdline arg - see m_OnCreateAsset).
+                    const std::string DefaultName = std::format("New {}", E.m_TypeName);
                     auto LastGeneratedAsset = m_Browser.m_OnCreateAsset
-                        ? m_Browser.m_OnCreateAsset(LibGUID, E.m_TypeGUID, m_ParentGUID, {})
-                        : m_AssetMgr.NewAsset(LibGUID, { {}, E.m_TypeGUID }, m_ParentGUID);
+                        ? m_Browser.m_OnCreateAsset(LibGUID, E.m_TypeGUID, m_ParentGUID, DefaultName)
+                        : m_AssetMgr.NewAsset(LibGUID, { {}, E.m_TypeGUID }, m_ParentGUID, DefaultName);
 
                     m_SelectedItems.clear();
                     m_SelectedItems.push_back(LastGeneratedAsset);
