@@ -2745,6 +2745,14 @@ namespace e10
             {
                 TypeName = P->m_TypeName;
             }
+            // Descriptor-only types with no plugin config (e.g. xecs Prefab) are still registered as a
+            // factory - without this the type folder comes out empty and info.txt lands in
+            // Descriptors/<b0>/... instead of next to the type's own Descriptors/<TypeName>/... data.
+            else if (auto pFactory = xresource_pipeline::factory_base::Find(ResourceGUID.m_Type); pFactory)
+            {
+                TypeName = pFactory->ResourceTypeName();
+            }
+            assert(TypeName.empty() == false);
 
             bool bFindLib = m_mLibraryDB.FindAsReadOnly(LibraryGUID, [&](const std::unique_ptr<library_db>& Library )
             {
