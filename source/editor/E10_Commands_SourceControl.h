@@ -177,12 +177,13 @@ namespace e10::commands
             auto& Cache = e10::source_control::StatusCacheRegistry()[RootPath];
             for (auto& [Key, File] : Cache.m_ByPath)
             {
-                Out += std::format("{}  {}{}{}{}{}\n",
+                Out += std::format("{}  {}{}{}{}{}{}\n",
                     File.path.relative.string(),
                     File.staged     ? "[staged]"     : "",
                     File.modified   ? "[modified]"   : "",
                     File.untracked  ? "[untracked]"  : "",
                     File.conflicted ? "[conflicted]" : "",
+                    File.deleted    ? "[deleted]"    : "",
                     File.lfsTracked ? " (LFS)"        : "");
             }
             if (Cache.m_ByPath.empty()) Out += "(clean)\n";

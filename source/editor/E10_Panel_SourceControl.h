@@ -1618,17 +1618,16 @@ namespace e10
         }
     }
 
-    // RunQuery, not Run() - Run() treats ANY non-empty Execute() result as a routing failure and logs
-    // it as "command failed" (see E29_CommandContext.h's own Run), which is wrong for a Query command
-    // whose OWN successful result text (e.g. "Pulled", "Outcome: Published") is exactly that non-empty
-    // string. This panel needs the literal text back to decide Pull-succeeded vs. Pull-hit-a-conflict,
-    // so it calls System.Execute directly and classifies the result itself via each command's own
-    // "<Verb>: " failure-message convention (every SourceControl* command already formats its
-    // failures that way - see E10_Commands_SourceControl.h).
+    // Every SourceControl* command is a query_command_base, and xundo::system keeps those in a SEPARATE registry
+    // from edit commands: system::Execute() only searches the edit one, so calling it here answered every Pull and
+    // Commit with "Unable find the command" - the Commit & Push button could never work. Query() is the method
+    // that searches the query registry. It also hands back the command's literal result text ("Pulled",
+    // "Outcome: Published", ...), which this panel classifies itself by each command's "<Verb>: " failure-message
+    // convention (see E10_Commands_SourceControl.h) - xeditor::Run() would treat any non-empty result as a failure.
     [[nodiscard]] inline std::string SourceControlRunQuery(xundo::system& Undo, const std::string& Cmd) noexcept
     {
         xeditor::LogConsole(Cmd, xeditor::log_source::User);
-        std::string Result = Undo.Execute(Cmd);
+        std::string Result = Undo.Query(Cmd);
         if (!Result.empty()) xeditor::LogConsole(Result, xeditor::log_source::System);
         return Result;
     }
@@ -1670,12 +1669,13 @@ namespace e10
             if (!LibraryByHex.count(LibHex)) continue; // library no longer open - skip, report below
             const auto LibraryGuidStr = LibHex;
 
+            // Best-effort pull first (brings in what others pushed, so the push below rarely needs the fallback). A failed
+            // pull no longer stops the submit: the commit is what protects the user's work, and SourceControlCommit
+            // itself integrates the remote (rebasing the new commit) if its push is rejected. A genuine content conflict
+            // is reported by that command, with the files named, and the commit stays safely local.
             const std::string PullResult = SourceControlRunQuery(Undo, std::format("SourceControlPull -Library {}", LibraryGuidStr));
             if (PullResult.starts_with("SourceControlPull: "))
-            {
-                Summary += std::format("Pull failed for library {}: {} - resolve with your normal git tooling, then retry.\n", LibraryGuidStr, PullResult);
-                continue; // never auto-resolve - skip committing THIS library's paths, try the rest
-            }
+                Summary += std::format("Note - pull before submit did not complete for library {}: {}\n", LibraryGuidStr, PullResult);
 
             std::string JoinedPaths;
             for (auto& P : Paths) { JoinedPaths += xstrtool::To(P); JoinedPaths += '\n'; }
@@ -2212,7 +2212,7 @@ namespace e10
             auto DepotRows = RowsForDepot(Rows, DepotKey);
             const bool bCanCommit = !DepotRows.empty() && CommentBuf[0] != '\0';
             if (!bCanCommit) ImGui::BeginDisabled();
-            if (ImGui::Button("Commit && Push"))
+            if (ImGui::Button("Commit & Push"))
             {
                 std::vector<std::wstring> Keys;
                 Keys.reserve(DepotRows.size());
@@ -2248,7 +2248,7 @@ namespace e10
             const auto ChangelistRows = SourceControlResolveChangelistRows(Rows, CL);
             const bool bCanCommit = !ChangelistRows.empty() && !CL.m_Comment.empty();
             if (!bCanCommit) ImGui::BeginDisabled();
-            if (ImGui::Button("Commit && Push"))
+            if (ImGui::Button("Commit & Push"))
                 SourceControlCommitChangelist(Undo, Rows, CL);
             if (!bCanCommit) ImGui::EndDisabled();
 
