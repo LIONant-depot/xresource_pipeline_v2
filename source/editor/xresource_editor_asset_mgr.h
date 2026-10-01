@@ -1637,6 +1637,12 @@ namespace xresource_editor
                 }
             }
 
+            // The links to the parents are added AFTER the insert below, not inside it: this map is read-locked for the whole callback, and
+            // reading it again from in there waits forever once another thread is queued to write it (a new type being created) - a deadlock.
+            // Info is moved into the node, so what the links need is copied first.
+            const auto RscLinks = Info.m_RscLinks;
+            const auto ChildGuid = Info.m_Guid;
+
             // Insert the info into the database
             m_pLibraryDB->m_InfoByTypeDataBase.FindAsReadOnlyOrCreate
             ( {Info.m_Guid.m_Type}
@@ -1670,37 +1676,37 @@ namespace xresource_editor
                     InfoNode.m_State                = library_db::info_node::state::IDLE;
 
                     //
-                    // Insert all the child links
-                    //
-                    for (const auto& LinkGuid : InfoNode.m_Info.m_RscLinks )
-                    {
-                        m_pLibraryDB->m_InfoByTypeDataBase.FindAsReadOnlyOrCreate
-                        ({ LinkGuid.m_Type }
-                        , [&](std::unique_ptr<library_db::info_db>& Entry)
-                        {
-                            Entry = std::make_unique<library_db::info_db>();
-                        }
-                        , [&](const std::unique_ptr<library_db::info_db>& Entry)
-                        {
-                            Entry->m_InfoDataBase.FindAsWriteOrCreate
-                            (LinkGuid.m_Instance
-                            , [&](library_db::info_node&)
-                            {
-                                // No need to do anything special at creation side...
-                            }
-                            , [&](library_db::info_node& ParentInfoNode)
-                            {
-                                ParentInfoNode.m_lChildLinks.push_back({ InfoNode.m_Info.m_Guid });
-                            });
-                        });
-                    }
-
-                    //
                     // Check if we should insert this entry in the compilation queue
                     //
                     m_pLibraryDB->AddToCompilationQueueIfNeeded(*Entry, InfoNode);
                 });
             });
+
+            //
+            // Insert all the child links (no lock of m_InfoByTypeDataBase is held here)
+            //
+            for (const auto& LinkGuid : RscLinks)
+            {
+                m_pLibraryDB->m_InfoByTypeDataBase.FindAsReadOnlyOrCreate
+                ({ LinkGuid.m_Type }
+                , [&](std::unique_ptr<library_db::info_db>& Entry)
+                {
+                    Entry = std::make_unique<library_db::info_db>();
+                }
+                , [&](const std::unique_ptr<library_db::info_db>& Entry)
+                {
+                    Entry->m_InfoDataBase.FindAsWriteOrCreate
+                    (LinkGuid.m_Instance
+                    , [&](library_db::info_node&)
+                    {
+                        // No need to do anything special at creation side...
+                    }
+                    , [&](library_db::info_node& ParentInfoNode)
+                    {
+                        ParentInfoNode.m_lChildLinks.push_back({ ChildGuid });
+                    });
+                });
+            }
 
             // "Which library owns this resource" (library_mgr::m_RscToLibraryMap) is populated from
             // EnsureLibraryLoaded, right after this whole scan finishes - NOT here. library_mgr's own
@@ -2786,7 +2792,10 @@ namespace xresource_editor
                     exit(1);
                 }
 
-                // Create a new asset
+                // Create a new asset. (The parents' child links are added after, outside the callback: this map is read-locked inside it, and reading
+                // it again from there deadlocks as soon as another thread is queued to write it.)
+                const auto RscLinks  = Info.m_RscLinks;
+                const auto ChildGuid = Info.m_Guid;
                 Library->m_InfoByTypeDataBase.FindAsReadOnlyOrCreate( ResourceGUID.m_Type, [&](std::unique_ptr<library_db::info_db>& InfoDB )
                 {
                     InfoDB = std::make_unique<library_db::info_db>();
@@ -2799,34 +2808,32 @@ namespace xresource_editor
                         InfoNode.m_Info   = std::move(Info);
                         InfoNode.m_InfoChangeCount = 1;
                         m_ModificationCounter++;
-
-                        //
-                        // Insert all the child links
-                        //
-                        for (const auto& LinkGuid : InfoNode.m_Info.m_RscLinks)
-                        {
-                            Library->m_InfoByTypeDataBase.FindAsReadOnlyOrCreate
-                            ( LinkGuid.m_Type 
-                            , [&](std::unique_ptr<library_db::info_db>& Entry)
-                            {
-                                Entry = std::make_unique<library_db::info_db>();
-                            }
-                            , [&](const std::unique_ptr<library_db::info_db>& Entry)
-                            {
-                                Entry->m_InfoDataBase.FindAsWriteOrCreate
-                                (LinkGuid.m_Instance
-                                , [&](library_db::info_node&)
-                                {
-                                    // No need to do anything special at creation side...
-                                }
-                                , [&](library_db::info_node& ParentInfoNode)
-                                {
-                                    ParentInfoNode.m_lChildLinks.push_back({ InfoNode.m_Info.m_Guid });
-                                });
-                            });
-                        }
                     });
                 });
+
+                // Insert all the child links (no lock of m_InfoByTypeDataBase is held here)
+                for (const auto& LinkGuid : RscLinks)
+                {
+                    Library->m_InfoByTypeDataBase.FindAsReadOnlyOrCreate
+                    ( LinkGuid.m_Type
+                    , [&](std::unique_ptr<library_db::info_db>& Entry)
+                    {
+                        Entry = std::make_unique<library_db::info_db>();
+                    }
+                    , [&](const std::unique_ptr<library_db::info_db>& Entry)
+                    {
+                        Entry->m_InfoDataBase.FindAsWriteOrCreate
+                        (LinkGuid.m_Instance
+                        , [&](library_db::info_node&)
+                        {
+                            // No need to do anything special at creation side...
+                        }
+                        , [&](library_db::info_node& ParentInfoNode)
+                        {
+                            ParentInfoNode.m_lChildLinks.push_back({ ChildGuid });
+                        });
+                    });
+                }
             });
 
             assert(bFindLib);
