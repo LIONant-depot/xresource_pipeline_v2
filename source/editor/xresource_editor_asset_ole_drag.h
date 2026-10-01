@@ -1,5 +1,5 @@
-#ifndef E10_ASSET_OLE_DRAG_H
-#define E10_ASSET_OLE_DRAG_H
+#ifndef XRESOURCE_EDITOR_ASSET_OLE_DRAG_H
+#define XRESOURCE_EDITOR_ASSET_OLE_DRAG_H
 #pragma once
 
 #include <windows.h>
@@ -15,7 +15,7 @@
 // shell drop target) - zero precedent anywhere in this codebase before this file (confirmed by an
 // exhaustive search for IDropTarget/IDropSource/IDataObject/DoDragDrop/CF_HDROP: none existed). Direct
 // user request, explicitly framed as a separate Win32 OLE project distinct from this app's existing,
-// entirely in-process ImGui drag-drop (E10_asset_browser_files_tab.h's own "E10_ASSET_FILE_DRAG"
+// entirely in-process ImGui drag-drop (xresource_editor_asset_browser_files_tab.h's own "XRESOURCE_EDITOR_ASSET_FILE_DRAG"
 // payload, which only ever works between rows/folders inside this one window).
 //
 // Scope, deliberately: this file only supports dragging FILES OUT (our rows -> a real shell window).
@@ -30,7 +30,7 @@
 // single-threaded Win32 app mid-drag). Acceptable for a short user gesture; flagged here rather than
 // silently glossed over.
 //
-namespace e10::ole_drag
+namespace xresource_editor::ole_drag
 {
     // Minimal IDropSource: continues the drag while the left button is down, cancels on Escape, and
     // reports "drop now" the instant the button is released - default cursors throughout (no custom

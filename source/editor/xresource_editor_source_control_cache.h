@@ -1,5 +1,5 @@
-#ifndef E10_SOURCE_CONTROL_CACHE_H
-#define E10_SOURCE_CONTROL_CACHE_H
+#ifndef XRESOURCE_EDITOR_SOURCE_CONTROL_CACHE_H
+#define XRESOURCE_EDITOR_SOURCE_CONTROL_CACHE_H
 #pragma once
 
 // Source-control status/lock cache - the CENTRALIZED, read-only-from-outside state that any view
@@ -8,7 +8,7 @@
 // whoever actually talks to a provider) - it has no ImGui dependency and no knowledge of git, xundo,
 // or E29, matching the same "library_mgr never holds a live device/texture, split CPU work from GPU
 // upload" split this codebase already uses for the asset-mgr/icon-atlas boundary. It lives beside
-// E10_AssetMgr.h specifically so it's reachable from every example, not just E29 - even though only
+// xresource_editor_asset_mgr.h specifically so it's reachable from every example, not just E29 - even though only
 // E29 populates it today via a real git/LFS provider.
 //
 // Direct user correction (2026-09-17): an earlier draft let the new E29 Source Control tab reach
@@ -29,10 +29,10 @@
 #include <unordered_set>
 #include <vector>
 
-namespace e10::source_control
+namespace xresource_editor::source_control
 {
     // Lowercase, backslash-normalized - the same relative-path key convention
-    // library_db::m_AssetDataBase already uses (E10_AssetMgr.h), not a new one invented here.
+    // library_db::m_AssetDataBase already uses (xresource_editor_asset_mgr.h), not a new one invented here.
     inline std::wstring NormalizeKey(const std::filesystem::path& RelativePath) noexcept
     {
         std::wstring Key = RelativePath.wstring();
@@ -263,4 +263,4 @@ namespace e10::source_control
     }
 }
 
-#endif // E10_SOURCE_CONTROL_CACHE_H
+#endif // XRESOURCE_EDITOR_SOURCE_CONTROL_CACHE_H

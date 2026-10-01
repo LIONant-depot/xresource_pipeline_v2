@@ -1,9 +1,9 @@
-#ifndef E10_COMMANDS_LIBRARY_DEPENDENCY_H
-#define E10_COMMANDS_LIBRARY_DEPENDENCY_H
+#ifndef XRESOURCE_EDITOR_COMMANDS_LIBRARY_DEPENDENCY_H
+#define XRESOURCE_EDITOR_COMMANDS_LIBRARY_DEPENDENCY_H
 #pragma once
 
 // AddLibraryDependency / RemoveLibraryDependency / CreateLibrary - explicit library m_ParentLibraries
-// authoring, a near-direct port of the scene dependency commands's own shape onto e10::library (see
+// authoring, a near-direct port of the scene dependency commands's own shape onto xresource_editor::library (see
 // the "Multi-library project model" plan section). Unlike a scene dependency (guid-only - every scene
 // already lives under the SAME project's own scene folder), a library dependency can be in a
 // completely different depot, so locating one that isn't already loaded this session needs a Path,
@@ -32,46 +32,46 @@
 // least MoveToTrash what it made), there is no per-library unload/trash primitive in this system at
 // all yet, so there is no honest "undo" target for a brand-new library - same reasoning EmptyTrashcan
 // already established for "real/irreversible, stays outside the undo system."
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_CommandGuids.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_command_guids.h"
 #include "dependencies/xundo/source/xundo_system.h"
 #include "dependencies/xeditor/include/xeditor/serialize.h"
 
-namespace e10::commands
+namespace xresource_editor::commands
 {
     inline std::string  EncodeLibraryPath(const std::wstring& Path) noexcept { return xeditor::Base64Encode(xstrtool::To(Path)); }
     inline std::wstring DecodeLibraryPath(const std::string& Encoded) noexcept { return xstrtool::To(xeditor::Base64Decode(Encoded)); }
 
     // Graph-walking primitives (CollectTransitiveLibraryParents/IsLibraryLegalReferenceTarget) now
-    // live on library_mgr itself (E10_AssetMgr.h) - shared with the generic Asset Browser UI's own
+    // live on library_mgr itself (xresource_editor_asset_mgr.h) - shared with the generic Asset Browser UI's own
     // picker filtering, which cannot depend on this command file. This file's own commands
-    // just call e10::g_LibMgr.CollectTransitiveLibraryParents(...) directly below.
+    // just call xresource_editor::g_LibMgr.CollectTransitiveLibraryParents(...) directly below.
 
     // Would adding "NewDependency" to Candidate's own m_ParentLibraries close a cycle? True iff
     // Candidate is already (transitively) reachable FROM NewDependency by walking m_ParentLibraries
     // edges - same check shape as WouldCreateDependencyCycle (xscene_dependencies.h), scene case.
-    inline bool WouldCreateLibraryDependencyCycle(e10::library::guid Candidate, e10::library::guid NewDependency) noexcept
+    inline bool WouldCreateLibraryDependencyCycle(xresource_editor::library::guid Candidate, xresource_editor::library::guid NewDependency) noexcept
     {
         if (Candidate == NewDependency) return true;
-        std::vector<e10::library::guid> Reachable;
-        e10::g_LibMgr.CollectTransitiveLibraryParents(std::vector<e10::library::guid>{ NewDependency }, e10::library::guid{}, Reachable);
+        std::vector<xresource_editor::library::guid> Reachable;
+        xresource_editor::g_LibMgr.CollectTransitiveLibraryParents(std::vector<xresource_editor::library::guid>{ NewDependency }, xresource_editor::library::guid{}, Reachable);
         return std::find(Reachable.begin(), Reachable.end(), Candidate) != Reachable.end();
     }
 
     // Libraries that become unreachable from Owner once DirectParent is removed from Owner's own
     // m_ParentLibraries (DirectParent itself plus anything only reachable through it) - same
     // Before/After transitive-closure diff as CollectLostParentsOnRemove's own scene-case shape.
-    inline void CollectLostLibrariesOnRemove(e10::library::guid OwnerGuid, e10::library::guid DirectParent, std::vector<e10::library::guid>& OutLost) noexcept
+    inline void CollectLostLibrariesOnRemove(xresource_editor::library::guid OwnerGuid, xresource_editor::library::guid DirectParent, std::vector<xresource_editor::library::guid>& OutLost) noexcept
     {
-        std::vector<e10::library::guid> DirectParents;
-        e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(OwnerGuid, [&](const std::unique_ptr<e10::library_db>& DB)
+        std::vector<xresource_editor::library::guid> DirectParents;
+        xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(OwnerGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
         {
             for (auto& P : DB->m_Library.m_ParentLibraries)
                 DirectParents.push_back(P.m_GUID);
         });
 
-        std::vector<e10::library::guid> Before, After;
-        e10::g_LibMgr.CollectTransitiveLibraryParents(DirectParents, e10::library::guid{}, Before);
-        e10::g_LibMgr.CollectTransitiveLibraryParents(DirectParents, DirectParent, After);
+        std::vector<xresource_editor::library::guid> Before, After;
+        xresource_editor::g_LibMgr.CollectTransitiveLibraryParents(DirectParents, xresource_editor::library::guid{}, Before);
+        xresource_editor::g_LibMgr.CollectTransitiveLibraryParents(DirectParents, DirectParent, After);
 
         OutLost.clear();
         for (auto& G : Before)
@@ -86,13 +86,13 @@ namespace e10::commands
     // question can be answered. A reference to a resource m_RscToLibraryMap has no entry for yet
     // (e.g. that resource was never scanned) is silently skipped, not treated as a hit - matches this
     // system's existing "best-effort, never block on an admittedly-incomplete index" posture.
-    inline std::string WhyCannotRemoveLibraryDependency(e10::library::guid OwnerGuid, e10::library::guid DirectParent) noexcept
+    inline std::string WhyCannotRemoveLibraryDependency(xresource_editor::library::guid OwnerGuid, xresource_editor::library::guid DirectParent) noexcept
     {
-        std::vector<e10::library::guid> Lost;
+        std::vector<xresource_editor::library::guid> Lost;
         CollectLostLibrariesOnRemove(OwnerGuid, DirectParent, Lost);
         if (Lost.empty()) return {};
 
-        auto IsLost = [&](e10::library::guid G) noexcept
+        auto IsLost = [&](xresource_editor::library::guid G) noexcept
         {
             return std::find(Lost.begin(), Lost.end(), G) != Lost.end();
         };
@@ -100,7 +100,7 @@ namespace e10::commands
         int HitCount = 0;
         std::string FirstHitName;
 
-        const bool bOwnerLoaded = e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(OwnerGuid, [&](const std::unique_ptr<e10::library_db>& DB)
+        const bool bOwnerLoaded = xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(OwnerGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
         {
             for (auto& TypeEntry : DB->m_InfoByTypeDataBase)
             {
@@ -109,8 +109,8 @@ namespace e10::commands
                     auto& Node = NodeEntry.second;
                     for (auto& Dep : Node.m_Dependencies.m_Resources)
                     {
-                        e10::library::guid OwningLib{};
-                        const bool bResolved = e10::g_LibMgr.m_RscToLibraryMap.FindAsReadOnly(Dep, [&](const e10::library::guid& L) { OwningLib = L; });
+                        xresource_editor::library::guid OwningLib{};
+                        const bool bResolved = xresource_editor::g_LibMgr.m_RscToLibraryMap.FindAsReadOnly(Dep, [&](const xresource_editor::library::guid& L) { OwningLib = L; });
                         if (bResolved && IsLost(OwningLib))
                         {
                             ++HitCount;
@@ -154,13 +154,13 @@ namespace e10::commands
             if (std::holds_alternative<xerr>(LibraryArg) || std::holds_alternative<xerr>(ParentArg))
                 return "AddLibraryDependency: bad arguments";
 
-            const auto LibraryGuid = e10::commands::ParseLibraryGuid(std::get<std::string>(LibraryArg));
-            const auto ParentGuid  = e10::commands::ParseLibraryGuid(std::get<std::string>(ParentArg));
+            const auto LibraryGuid = xresource_editor::commands::ParseLibraryGuid(std::get<std::string>(LibraryArg));
+            const auto ParentGuid  = xresource_editor::commands::ParseLibraryGuid(std::get<std::string>(ParentArg));
             if (LibraryGuid == ParentGuid) return "AddLibraryDependency: a library cannot depend on itself";
 
             bool bLibraryLoaded = false;
             bool bAlreadyPresent = false;
-            e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<e10::library_db>& DB)
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 bLibraryLoaded = true;
                 for (auto& P : DB->m_Library.m_ParentLibraries)
@@ -174,7 +174,7 @@ namespace e10::commands
 
             // Resolve the dependency's Path - prefer the already-loaded copy, else the caller-supplied -ParentPath.
             std::wstring ParentPath;
-            bool bParentLoaded = e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(ParentGuid, [&](const std::unique_ptr<e10::library_db>& DB)
+            bool bParentLoaded = xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(ParentGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 ParentPath = DB->m_Library.m_Path;
             });
@@ -188,20 +188,20 @@ namespace e10::commands
 
             // Bring the dependency resident (dependent load, not explicit) BEFORE recording the edge,
             // so a failure to load never leaves a dangling edge behind.
-            e10::library::guid LoadedGuid{};
-            if (auto Err = e10::g_LibMgr.EnsureLibraryLoaded(ParentPath, /*bExplicitRequest*/ false, /*bIsRootProject*/ false, LoadedGuid); Err)
+            xresource_editor::library::guid LoadedGuid{};
+            if (auto Err = xresource_editor::g_LibMgr.EnsureLibraryLoaded(ParentPath, /*bExplicitRequest*/ false, /*bIsRootProject*/ false, LoadedGuid); Err)
                 return std::format("AddLibraryDependency: failed to load dependency: {}", Err.getMessage());
             if (LoadedGuid != ParentGuid)
                 return "AddLibraryDependency: -Parent guid does not match the library found at -ParentPath";
 
             xerr SaveErr;
-            e10::g_LibMgr.m_mLibraryDB.FindAsWrite(LibraryGuid, [&](std::unique_ptr<e10::library_db>& DB)
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(LibraryGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
             {
-                e10::library Stub;
+                xresource_editor::library Stub;
                 Stub.m_GUID = ParentGuid;
                 Stub.m_Path = ParentPath;
                 DB->m_Library.m_ParentLibraries.push_back(std::move(Stub));
-                SaveErr = e10::g_LibMgr.SaveLibraryConfig(DB->m_Library);
+                SaveErr = xresource_editor::g_LibMgr.SaveLibraryConfig(DB->m_Library);
             });
             if (SaveErr) return std::format("AddLibraryDependency: {}", SaveErr.getMessage());
             return {};
@@ -216,7 +216,7 @@ namespace e10::commands
             std::uint32_t bWasPresent = 0;
             if (Library && Parent)
             {
-                e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(e10::library::guid{ .m_Instance = { Library } }, [&](const std::unique_ptr<e10::library_db>& DB)
+                xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(xresource_editor::library::guid{ .m_Instance = { Library } }, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
                 {
                     for (auto& P : DB->m_Library.m_ParentLibraries)
                         if (P.m_GUID.m_Instance.m_Value == Parent) { bWasPresent = 1; break; }
@@ -234,21 +234,21 @@ namespace e10::commands
             std::uint32_t bWasPresent = 0; File.Read(bWasPresent);
             if (bWasPresent) return;
 
-            const auto LibraryGuid = e10::library::guid{ .m_Instance = { Library } };
-            const auto ParentGuid  = e10::library::guid{ .m_Instance = { Parent } };
+            const auto LibraryGuid = xresource_editor::library::guid{ .m_Instance = { Library } };
+            const auto ParentGuid  = xresource_editor::library::guid{ .m_Instance = { Parent } };
 
             xerr SaveErr;
-            e10::g_LibMgr.m_mLibraryDB.FindAsWrite(LibraryGuid, [&](std::unique_ptr<e10::library_db>& DB)
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(LibraryGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 auto& List = DB->m_Library.m_ParentLibraries;
-                if (auto It = std::find_if(List.begin(), List.end(), [&](const e10::library& L) { return L.m_GUID == ParentGuid; }); It != List.end())
+                if (auto It = std::find_if(List.begin(), List.end(), [&](const xresource_editor::library& L) { return L.m_GUID == ParentGuid; }); It != List.end())
                     List.erase(It);
-                SaveErr = e10::g_LibMgr.SaveLibraryConfig(DB->m_Library);
+                SaveErr = xresource_editor::g_LibMgr.SaveLibraryConfig(DB->m_Library);
             });
 
             // Residency bookkeeping only - no per-library unload exists yet (see this file's own top
             // comment), so this purely keeps the counter honest, it never actually frees anything.
-            e10::g_LibMgr.m_mLibraryDB.FindAsWrite(ParentGuid, [&](std::unique_ptr<e10::library_db>& DB)
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(ParentGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 if (DB->m_DependentLibraryCount > 0) DB->m_DependentLibraryCount--;
             });
@@ -283,28 +283,28 @@ namespace e10::commands
             if (std::holds_alternative<xerr>(LibraryArg) || std::holds_alternative<xerr>(ParentArg))
                 return "RemoveLibraryDependency: bad arguments";
 
-            const auto LibraryGuid = e10::commands::ParseLibraryGuid(std::get<std::string>(LibraryArg));
-            const auto ParentGuid  = e10::commands::ParseLibraryGuid(std::get<std::string>(ParentArg));
+            const auto LibraryGuid = xresource_editor::commands::ParseLibraryGuid(std::get<std::string>(LibraryArg));
+            const auto ParentGuid  = xresource_editor::commands::ParseLibraryGuid(std::get<std::string>(ParentArg));
 
             if (auto Why = WhyCannotRemoveLibraryDependency(LibraryGuid, ParentGuid); !Why.empty())
                 return Why;
 
             bool bFound = false;
             xerr SaveErr;
-            e10::g_LibMgr.m_mLibraryDB.FindAsWrite(LibraryGuid, [&](std::unique_ptr<e10::library_db>& DB)
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(LibraryGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 auto& List = DB->m_Library.m_ParentLibraries;
-                if (auto It = std::find_if(List.begin(), List.end(), [&](const e10::library& L) { return L.m_GUID == ParentGuid; }); It != List.end())
+                if (auto It = std::find_if(List.begin(), List.end(), [&](const xresource_editor::library& L) { return L.m_GUID == ParentGuid; }); It != List.end())
                 {
                     List.erase(It);
                     bFound = true;
-                    SaveErr = e10::g_LibMgr.SaveLibraryConfig(DB->m_Library);
+                    SaveErr = xresource_editor::g_LibMgr.SaveLibraryConfig(DB->m_Library);
                 }
             });
             if (!bFound) return "RemoveLibraryDependency: parent is not a dependency";
             if (SaveErr) return std::format("RemoveLibraryDependency: {}", SaveErr.getMessage());
 
-            e10::g_LibMgr.m_mLibraryDB.FindAsWrite(ParentGuid, [&](std::unique_ptr<e10::library_db>& DB)
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(ParentGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 if (DB->m_DependentLibraryCount > 0) DB->m_DependentLibraryCount--;
             });
@@ -321,7 +321,7 @@ namespace e10::commands
             std::wstring ParentPath;
             if (Library && Parent)
             {
-                e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(e10::library::guid{ .m_Instance = { Library } }, [&](const std::unique_ptr<e10::library_db>& DB)
+                xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(xresource_editor::library::guid{ .m_Instance = { Library } }, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
                 {
                     auto& List = DB->m_Library.m_ParentLibraries;
                     for (std::size_t i = 0; i < List.size(); ++i)
@@ -341,25 +341,25 @@ namespace e10::commands
             std::uint32_t Index = 0; File.Read(Index);
             const std::wstring ParentPath = xstrtool::To(xeditor::ReadString(File));
 
-            const auto LibraryGuid = e10::library::guid{ .m_Instance = { Library } };
-            const auto ParentGuid  = e10::library::guid{ .m_Instance = { Parent } };
+            const auto LibraryGuid = xresource_editor::library::guid{ .m_Instance = { Library } };
+            const auto ParentGuid  = xresource_editor::library::guid{ .m_Instance = { Parent } };
 
             xerr SaveErr;
-            e10::g_LibMgr.m_mLibraryDB.FindAsWrite(LibraryGuid, [&](std::unique_ptr<e10::library_db>& DB)
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(LibraryGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 auto& List = DB->m_Library.m_ParentLibraries;
-                if (std::find_if(List.begin(), List.end(), [&](const e10::library& L) { return L.m_GUID == ParentGuid; }) == List.end())
+                if (std::find_if(List.begin(), List.end(), [&](const xresource_editor::library& L) { return L.m_GUID == ParentGuid; }) == List.end())
                 {
-                    e10::library Stub;
+                    xresource_editor::library Stub;
                     Stub.m_GUID = ParentGuid;
                     Stub.m_Path = ParentPath;
                     const auto Idx = std::min<std::size_t>(Index, List.size());
                     List.insert(List.begin() + static_cast<std::ptrdiff_t>(Idx), std::move(Stub));
                 }
-                SaveErr = e10::g_LibMgr.SaveLibraryConfig(DB->m_Library);
+                SaveErr = xresource_editor::g_LibMgr.SaveLibraryConfig(DB->m_Library);
             });
 
-            e10::g_LibMgr.m_mLibraryDB.FindAsWrite(ParentGuid, [&](std::unique_ptr<e10::library_db>& DB)
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(ParentGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 DB->m_DependentLibraryCount++;
             });
@@ -400,19 +400,19 @@ namespace e10::commands
             if (std::filesystem::exists(ConfigPath))
                 return "CreateLibrary: a Library.config.txt already exists at this path";
 
-            e10::library Lib;
+            xresource_editor::library Lib;
             Lib.m_GUID.m_Instance.GenerateGUID();
             Lib.m_Path = Path;
 
-            e10::create_directory_path(std::format(L"{}\\Project.config", Path));
-            if (auto Err = e10::g_LibMgr.SaveLibraryConfig(Lib); Err)
+            xresource_editor::create_directory_path(std::format(L"{}\\Project.config", Path));
+            if (auto Err = xresource_editor::g_LibMgr.SaveLibraryConfig(Lib); Err)
                 return std::format("CreateLibrary: {}", Err.getMessage());
 
-            e10::library::guid OutGuid{};
-            if (auto Err = e10::g_LibMgr.EnsureLibraryLoaded(Path, /*bExplicitRequest*/ true, /*bIsRootProject*/ false, OutGuid); Err)
+            xresource_editor::library::guid OutGuid{};
+            if (auto Err = xresource_editor::g_LibMgr.EnsureLibraryLoaded(Path, /*bExplicitRequest*/ true, /*bIsRootProject*/ false, OutGuid); Err)
                 return std::format("CreateLibrary: written to disk but failed to load: {}", Err.getMessage());
 
-            return e10::commands::FormatLibraryGuid(OutGuid);
+            return xresource_editor::commands::FormatLibraryGuid(OutGuid);
         }
 
         xcmdline::parser::handle m_hPath;
@@ -424,7 +424,7 @@ namespace e10::commands
     // of the dependency chain... it is a rule that must be observed and forced compliance" - direct
     // user requirement). Lists every library a resource OWNED BY -Library is legally allowed to
     // reference a resource from - itself, plus every library reachable by walking its own
-    // m_ParentLibraries edges (e10::library_mgr::IsLibraryLegalReferenceTarget's own rule, exposed here
+    // m_ParentLibraries edges (xresource_editor::library_mgr::IsLibraryLegalReferenceTarget's own rule, exposed here
     // so an AI/script can check "am I allowed to point at this" without needing the ImGui picker at
     // all - same "never need to read a raw file / open a dialog by hand" reasoning every other
     // discovery command in this system was built for).
@@ -447,17 +447,17 @@ namespace e10::commands
             auto LibraryArg = m_Parser.getOptionArgAs<std::string>(m_hLibrary, 0);
             if (std::holds_alternative<xerr>(LibraryArg)) return "ListLegalReferenceLibraries: bad arguments";
 
-            const auto LibraryGuid = e10::commands::ParseLibraryGuid(std::get<std::string>(LibraryArg));
+            const auto LibraryGuid = xresource_editor::commands::ParseLibraryGuid(std::get<std::string>(LibraryArg));
 
-            std::vector<e10::library::guid> Legal;
-            e10::g_LibMgr.CollectTransitiveLibraryParents(std::vector<e10::library::guid>{ LibraryGuid }, e10::library::guid{}, Legal);
+            std::vector<xresource_editor::library::guid> Legal;
+            xresource_editor::g_LibMgr.CollectTransitiveLibraryParents(std::vector<xresource_editor::library::guid>{ LibraryGuid }, xresource_editor::library::guid{}, Legal);
 
             std::string Out;
             for (auto& G : Legal)
             {
                 std::wstring Path;
-                e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(G, [&](const std::unique_ptr<e10::library_db>& DB) { Path = DB->m_Library.m_Path; });
-                Out += std::format("{}  {}\n", e10::commands::FormatLibraryGuid(G), xstrtool::To(Path));
+                xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(G, [&](const std::unique_ptr<xresource_editor::library_db>& DB) { Path = DB->m_Library.m_Path; });
+                Out += std::format("{}  {}\n", xresource_editor::commands::FormatLibraryGuid(G), xstrtool::To(Path));
             }
             return Out;
         }
@@ -479,14 +479,14 @@ namespace e10::commands
         std::string Query() noexcept override
         {
             std::string Out;
-            for (auto& Lib : e10::g_LibMgr.m_mLibraryDB)
+            for (auto& Lib : xresource_editor::g_LibMgr.m_mLibraryDB)
             {
                 const auto& L = Lib.second->m_Library;
-                Out += std::format("{}  {}{}", e10::commands::FormatLibraryGuid(Lib.first), xstrtool::To(L.m_Path), L.m_bRootProject ? "  [project root]" : "");
+                Out += std::format("{}  {}{}", xresource_editor::commands::FormatLibraryGuid(Lib.first), xstrtool::To(L.m_Path), L.m_bRootProject ? "  [project root]" : "");
                 if (!L.m_ParentLibraries.empty())
                 {
                     Out += "  depends on:";
-                    for (auto& P : L.m_ParentLibraries) Out += " " + e10::commands::FormatLibraryGuid(P.m_GUID);
+                    for (auto& P : L.m_ParentLibraries) Out += " " + xresource_editor::commands::FormatLibraryGuid(P.m_GUID);
                 }
                 Out += '\n';
             }
@@ -495,4 +495,4 @@ namespace e10::commands
     };
 }
 
-#endif // E10_COMMANDS_LIBRARY_DEPENDENCY_H
+#endif // XRESOURCE_EDITOR_COMMANDS_LIBRARY_DEPENDENCY_H

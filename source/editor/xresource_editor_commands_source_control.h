@@ -1,5 +1,5 @@
-#ifndef E10_COMMANDS_SOURCE_CONTROL_H
-#define E10_COMMANDS_SOURCE_CONTROL_H
+#ifndef XRESOURCE_EDITOR_COMMANDS_SOURCE_CONTROL_H
+#define XRESOURCE_EDITOR_COMMANDS_SOURCE_CONTROL_H
 #pragma once
 
 // Source Control command/undo layer - Phase 2 of the source-control plan (see
@@ -7,30 +7,30 @@
 // Every command here is xundo::query_command_base, never xundo::command_base: Commit/Pull/Push are
 // real round trips to a server that already has its own history (git's own commit graph/revert/
 // reflog), and Lock/Unlock are server round trips too, not local-state edits - the exact same
-// reasoning that kept EmptyTrashcan out of the undo system entirely (E10_Commands_Assets.h's
+// reasoning that kept EmptyTrashcan out of the undo system entirely (xresource_editor_commands_assets.h's
 // own top comment). None of these belong in the local Undo/Redo history.
 //
-// Path arguments reuse the EXACT convention E10_Commands_AssetFiles.h already established for real
+// Path arguments reuse the EXACT convention xresource_editor_commands_asset_files.h already established for real
 // (non-descriptor) paths: Base64-encoded, relative to the library root (EncodeAssetPath/
 // DecodeAssetPath, same file) - real paths contain backslashes/spaces that would otherwise collide
 // with the CLI's own token splitting.
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_CommandGuids.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_command_guids.h"
 #include "dependencies/xundo/source/xundo_system.h"
 #include "dependencies/xeditor/include/xeditor/commands.h"
 #include "dependencies/xeditor/include/xeditor/serialize.h"
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_Commands_AssetFiles.h" // EncodeAssetPath/DecodeAssetPath
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_SourceControlStatus.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_commands_asset_files.h" // EncodeAssetPath/DecodeAssetPath
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_source_control_status.h"
 
-namespace e10::commands
+namespace xresource_editor::commands
 {
     // Resolves a Library guid to its real on-disk root path - the one piece every command below
     // needs before it can reach a GitLfsWorkspaceSession. Empty return means the library isn't
     // currently open (same "not found" shape ListAssets/DescribeAsset already report for a bad
     // Library guid).
-    inline std::wstring ResolveLibraryRootPath(e10::library::guid LibraryGuid) noexcept
+    inline std::wstring ResolveLibraryRootPath(xresource_editor::library::guid LibraryGuid) noexcept
     {
         std::wstring RootPath;
-        e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<e10::library_db>& Library)
+        xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<xresource_editor::library_db>& Library)
         {
             RootPath = Library->m_Library.m_Path;
         });
@@ -42,9 +42,9 @@ namespace e10::commands
     // rows, the Resources tab's per-tile "Resource Menu", the Assets tab's folder rows). A no-op if
     // nothing under FolderPath is actually pending (e.g. the confirm dialog was somehow reached on an
     // already-clean resource).
-    inline void RunRevertUnderFolder(xundo::system& Undo, e10::library::guid LibraryGuid, const std::wstring& RootPath, const std::wstring& FolderPath) noexcept
+    inline void RunRevertUnderFolder(xundo::system& Undo, xresource_editor::library::guid LibraryGuid, const std::wstring& RootPath, const std::wstring& FolderPath) noexcept
     {
-        const auto Paths = e10::source_control::GetPendingPathsUnderFolder(RootPath, FolderPath);
+        const auto Paths = xresource_editor::source_control::GetPendingPathsUnderFolder(RootPath, FolderPath);
         if (Paths.empty()) return;
         std::wstring Joined;
         for (auto& P : Paths) { if (!Joined.empty()) Joined += L'\n'; Joined += P; }
@@ -58,10 +58,10 @@ namespace e10::commands
     // search every open library because it only ever has a bare full_guid), this overload is for
     // callers that already know which library owns the resource (e.g. the Asset Browser's own
     // per-library tabs) - no search needed.
-    inline void RevertResourceWholeFolder(xundo::system& Undo, e10::library::guid LibraryGuid, xresource::full_guid ResourceGuid) noexcept
+    inline void RevertResourceWholeFolder(xundo::system& Undo, xresource_editor::library::guid LibraryGuid, xresource::full_guid ResourceGuid) noexcept
     {
         std::wstring FolderPath;
-        const bool bFound = e10::g_LibMgr.getNodeInfo(LibraryGuid, ResourceGuid, [&](const e10::library_db::info_node& Node)
+        const bool bFound = xresource_editor::g_LibMgr.getNodeInfo(LibraryGuid, ResourceGuid, [&](const xresource_editor::library_db::info_node& Node)
         {
             const auto SlashPos = Node.m_Path.find_last_of(L'\\');
             FolderPath = (SlashPos == std::wstring::npos) ? Node.m_Path : Node.m_Path.substr(0, SlashPos);
@@ -71,7 +71,7 @@ namespace e10::commands
         const auto RootPath = ResolveLibraryRootPath(LibraryGuid);
         if (RootPath.empty()) return;
 
-        e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<e10::library_db>& Lib)
+        xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<xresource_editor::library_db>& Lib)
         {
             const auto& LibRoot = Lib->m_Library.m_Path;
             if (FolderPath.size() > LibRoot.size() && FolderPath.compare(0, LibRoot.size(), LibRoot) == 0)
@@ -167,14 +167,14 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlStatus: library not open";
 
-            const auto LastRefresh = e10::source_control::GetLastRefreshTime(RootPath);
+            const auto LastRefresh = xresource_editor::source_control::GetLastRefreshTime(RootPath);
             if (!LastRefresh) return "SourceControlStatus: never refreshed - run SourceControlRefresh first";
 
             std::string Out = std::format("(as of {:.0f}s ago)\n",
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - *LastRefresh).count());
 
-            std::lock_guard<std::mutex> Lock(e10::source_control::StatusCacheMutex());
-            auto& Cache = e10::source_control::StatusCacheRegistry()[RootPath];
+            std::lock_guard<std::mutex> Lock(xresource_editor::source_control::StatusCacheMutex());
+            auto& Cache = xresource_editor::source_control::StatusCacheRegistry()[RootPath];
             for (auto& [Key, File] : Cache.m_ByPath)
             {
                 Out += std::format("{}  {}{}{}{}{}{}\n",
@@ -218,14 +218,14 @@ namespace e10::commands
             const auto LibraryGuid = ParseLibraryGuid(std::get<std::string>(LibraryArg));
 
             std::string Out;
-            const bool bFound = e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<e10::library_db>& DB)
+            const bool bFound = xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 const char* StateStr = "Unknown";
                 switch (DB->m_DepotLinkState)
                 {
-                    case e10::library_db::depot_link_state::Confirmed:  StateStr = "Confirmed";  break;
-                    case e10::library_db::depot_link_state::Mismatch:   StateStr = "Mismatch";    break;
-                    case e10::library_db::depot_link_state::NoProvider: StateStr = "NoProvider";  break;
+                    case xresource_editor::library_db::depot_link_state::Confirmed:  StateStr = "Confirmed";  break;
+                    case xresource_editor::library_db::depot_link_state::Mismatch:   StateStr = "Mismatch";    break;
+                    case xresource_editor::library_db::depot_link_state::NoProvider: StateStr = "NoProvider";  break;
                     default: break;
                 }
 
@@ -266,7 +266,7 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlRefresh: library not open";
 
-            e10::source_control::LaunchSourceControlStatusScan(RootPath);
+            xresource_editor::source_control::LaunchSourceControlStatusScan(RootPath);
             return "SourceControlRefresh: scanning in the background - check SourceControlStatus shortly";
         }
 
@@ -299,8 +299,8 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlListLocks: library not open";
 
-            std::lock_guard<std::mutex> Lock(e10::source_control::LockCacheMutex());
-            auto& Cache = e10::source_control::LockCacheRegistry()[RootPath];
+            std::lock_guard<std::mutex> Lock(xresource_editor::source_control::LockCacheMutex());
+            auto& Cache = xresource_editor::source_control::LockCacheRegistry()[RootPath];
             if (Cache.m_ByPath.empty()) return "(no locks in cache)";
 
             std::string Out;
@@ -346,7 +346,7 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlLock: library not open";
 
-            auto* pWorkspace = e10::source_control::GetOrCreateWorkspace(RootPath);
+            auto* pWorkspace = xresource_editor::source_control::GetOrCreateWorkspace(RootPath);
             if (!pWorkspace) return "SourceControlLock: not a git working tree";
 
             const auto Path = DecodeAssetPath(std::get<std::string>(PathArg));
@@ -374,7 +374,7 @@ namespace e10::commands
             // mark did not change to the green lock" - the lock badge only ever refreshed on the NEXT
             // full scan. We already know the real new lock state right here - write it into the cache
             // immediately instead of waiting.
-            if (File.coordination.lock) e10::source_control::PublishSingleLock(RootPath, Path, File.coordination.lock);
+            if (File.coordination.lock) xresource_editor::source_control::PublishSingleLock(RootPath, Path, File.coordination.lock);
 
             return Out;
         }
@@ -414,7 +414,7 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlUnlock: library not open";
 
-            auto* pWorkspace = e10::source_control::GetOrCreateWorkspace(RootPath);
+            auto* pWorkspace = xresource_editor::source_control::GetOrCreateWorkspace(RootPath);
             if (!pWorkspace) return "SourceControlUnlock: not a git working tree";
 
             const auto Path = DecodeAssetPath(std::get<std::string>(PathArg));
@@ -432,7 +432,7 @@ namespace e10::commands
             // Same immediate-cache-update fix as SourceControlLock - a successful Unlock means the
             // cache's own entry for this path is now stale (still shows locked) until the next scan,
             // which nothing here should have to wait for.
-            e10::source_control::PublishSingleLock(RootPath, Path, std::nullopt);
+            xresource_editor::source_control::PublishSingleLock(RootPath, Path, std::nullopt);
 
             return "Unlocked";
         }
@@ -470,7 +470,7 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlRevert: library not open";
 
-            auto* pWorkspace = e10::source_control::GetOrCreateWorkspace(RootPath);
+            auto* pWorkspace = xresource_editor::source_control::GetOrCreateWorkspace(RootPath);
             if (!pWorkspace) return "SourceControlRevert: not a git working tree";
 
             sc::RevertRequest Request;
@@ -516,7 +516,7 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlStage: library not open";
 
-            auto* pWorkspace = e10::source_control::GetOrCreateWorkspace(RootPath);
+            auto* pWorkspace = xresource_editor::source_control::GetOrCreateWorkspace(RootPath);
             if (!pWorkspace) return "SourceControlStage: not a git working tree";
 
             sc::AddRequest Request;
@@ -563,7 +563,7 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlCommit: library not open";
 
-            auto* pWorkspace = e10::source_control::GetOrCreateWorkspace(RootPath);
+            auto* pWorkspace = xresource_editor::source_control::GetOrCreateWorkspace(RootPath);
             if (!pWorkspace) return "SourceControlCommit: not a git working tree";
 
             const auto Message = xeditor::Base64Decode(std::get<std::string>(MessageArg));
@@ -614,7 +614,7 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlPull: library not open";
 
-            auto* pWorkspace = e10::source_control::GetOrCreateWorkspace(RootPath);
+            auto* pWorkspace = xresource_editor::source_control::GetOrCreateWorkspace(RootPath);
             if (!pWorkspace) return "SourceControlPull: not a git working tree";
 
             const auto Result = pWorkspace->Sync(sc::SyncRequest{});
@@ -654,7 +654,7 @@ namespace e10::commands
             const auto RootPath    = ResolveLibraryRootPath(LibraryGuid);
             if (RootPath.empty()) return "SourceControlPush: library not open";
 
-            auto* pWorkspace = e10::source_control::GetOrCreateWorkspace(RootPath);
+            auto* pWorkspace = xresource_editor::source_control::GetOrCreateWorkspace(RootPath);
             if (!pWorkspace) return "SourceControlPush: not a git working tree";
 
             const auto Result = pWorkspace->Push(sc::PushRequest{});
@@ -666,4 +666,4 @@ namespace e10::commands
     };
 }
 
-#endif // E10_COMMANDS_SOURCE_CONTROL_H
+#endif // XRESOURCE_EDITOR_COMMANDS_SOURCE_CONTROL_H

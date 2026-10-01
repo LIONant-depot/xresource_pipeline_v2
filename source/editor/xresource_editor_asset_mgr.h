@@ -32,10 +32,10 @@
 #define XRESOURCE_PIPELINE_NO_COMPILER
 #include "dependencies/xresource_pipeline_v2/source/xresource_pipeline.h"
 
-#include "E10_PluginMgr.h"
-#include "E10_PluginIconAtlas.h"
+#include "xresource_editor_plugin_mgr.h"
+#include "xresource_editor_plugin_icon_atlas.h"
 
-namespace e10
+namespace xresource_editor
 {
     namespace details
     {
@@ -1820,20 +1820,20 @@ namespace e10
 
         //------------------------------------------------------------------------------------------------
 
-        e10::folder::guid getValidParentFolder(const library::guid glibraryGUID, const xresource::full_guid& gDescriptor) noexcept
+        xresource_editor::folder::guid getValidParentFolder(const library::guid glibraryGUID, const xresource::full_guid& gDescriptor) noexcept
         {
-            e10::folder::guid   ParentFolder    = {};
+            xresource_editor::folder::guid   ParentFolder    = {};
 
             getInfo(glibraryGUID, gDescriptor, [&](xresource_pipeline::info& Info )
             {
                 for ( auto& E : Info.m_RscLinks )
                 {
-                    if ( E.m_Type == e10::folder::type_guid_v && E != e10::folder::trash_guid_v )
+                    if ( E.m_Type == xresource_editor::folder::type_guid_v && E != xresource_editor::folder::trash_guid_v )
                     {
                         // Make sure that the parent is not erased...
                         getInfo(glibraryGUID, E, [&](xresource_pipeline::info& Info)
                         {
-                            if (Info.m_RscLinks.empty() || Info.m_RscLinks[0] != e10::folder::trash_guid_v)
+                            if (Info.m_RscLinks.empty() || Info.m_RscLinks[0] != xresource_editor::folder::trash_guid_v)
                                 ParentFolder.m_Instance = Info.m_Guid.m_Instance;
                         });
                         break;
@@ -1855,9 +1855,9 @@ namespace e10
 
             bool foundLibrary = m_mLibraryDB.FindAsReadOnly(glibraryGUID, [&](const std::unique_ptr<library_db>& Library)
             {
-                bool bFoundFolderType = Library->m_InfoByTypeDataBase.FindAsReadOnly(e10::folder::trash_guid_v.m_Type, [&](const std::unique_ptr<library_db::info_db>& FolderInfoDB)
+                bool bFoundFolderType = Library->m_InfoByTypeDataBase.FindAsReadOnly(xresource_editor::folder::trash_guid_v.m_Type, [&](const std::unique_ptr<library_db::info_db>& FolderInfoDB)
                 {
-                    bool bTrashInstanceFound = FolderInfoDB->m_InfoDataBase.FindAsWrite(e10::folder::trash_guid_v.m_Instance, [&](library_db::info_node& TrashNode)
+                    bool bTrashInstanceFound = FolderInfoDB->m_InfoDataBase.FindAsWrite(xresource_editor::folder::trash_guid_v.m_Instance, [&](library_db::info_node& TrashNode)
                     {
                         const int  OriginalCount   = static_cast<int>(TrashNode.m_lChildLinks.size());
                         int        Index           = 0;
@@ -1866,7 +1866,7 @@ namespace e10
                             // Let the User know what is going on...
                             Callback( Index++, OriginalCount );
 
-                            assert(ItemToDelete != e10::folder::trash_guid_v);
+                            assert(ItemToDelete != xresource_editor::folder::trash_guid_v);
 
                             //
                             // Handle specific child
@@ -1879,10 +1879,10 @@ namespace e10
                                     //
                                     // Remove itself from any parents
                                     //
-                                    assert(ChildInfoNode.m_Info.m_RscLinks[0] == e10::folder::trash_guid_v);
+                                    assert(ChildInfoNode.m_Info.m_RscLinks[0] == xresource_editor::folder::trash_guid_v);
                                     for ( auto& ItemParent : ChildInfoNode.m_Info.m_RscLinks )
                                     {
-                                        if (ItemParent == e10::folder::trash_guid_v) continue;
+                                        if (ItemParent == xresource_editor::folder::trash_guid_v) continue;
 
                                         //
                                         // Detach from parent
@@ -2037,9 +2037,9 @@ namespace e10
 
             bool foundLibrary = m_mLibraryDB.FindAsReadOnly(glibraryGUID, [&](const std::unique_ptr<library_db>& library)
             {
-                bool bFoundFolderType = library->m_InfoByTypeDataBase.FindAsReadOnly(e10::folder::trash_guid_v.m_Type, [&](const std::unique_ptr<library_db::info_db>& FolderInfoDB)
+                bool bFoundFolderType = library->m_InfoByTypeDataBase.FindAsReadOnly(xresource_editor::folder::trash_guid_v.m_Type, [&](const std::unique_ptr<library_db::info_db>& FolderInfoDB)
                 {
-                    bool bTrashInstanceFound = FolderInfoDB->m_InfoDataBase.FindAsWrite(e10::folder::trash_guid_v.m_Instance, [&](library_db::info_node& TrashNode)
+                    bool bTrashInstanceFound = FolderInfoDB->m_InfoDataBase.FindAsWrite(xresource_editor::folder::trash_guid_v.m_Instance, [&](library_db::info_node& TrashNode)
                     {
                         std::function<void(const xresource::full_guid&, bool)> ClearTrashTag = [&](const xresource::full_guid& gEntry, bool isRoot )
                         {
@@ -2051,7 +2051,7 @@ namespace e10
                                     //
                                     // Remove Trans Tag
                                     //
-                                    assert(sourceNode.m_Info.m_RscLinks[0] == e10::folder::trash_guid_v);
+                                    assert(sourceNode.m_Info.m_RscLinks[0] == xresource_editor::folder::trash_guid_v);
 
                                     // Removed tag
                                     sourceNode.m_Info.m_RscLinks.erase(sourceNode.m_Info.m_RscLinks.begin());
@@ -2060,8 +2060,8 @@ namespace e10
                                     {
                                         for ( auto& E : sourceNode.m_Info.m_RscLinks )
                                         {
-                                            assert(E != e10::folder::trash_guid_v);
-                                            if ( E.m_Type == e10::folder::type_guid_v)
+                                            assert(E != xresource_editor::folder::trash_guid_v);
+                                            if ( E.m_Type == xresource_editor::folder::type_guid_v)
                                             {
                                                 gDescriptorParent = E;
                                                 break;
@@ -2149,9 +2149,9 @@ namespace e10
 
             bool foundLibrary = m_mLibraryDB.FindAsReadOnly(glibraryGUID, [&](const std::unique_ptr<library_db>& library)
             {
-                bool bFoundFolderType = library->m_InfoByTypeDataBase.FindAsReadOnly(e10::folder::trash_guid_v.m_Type, [&](const std::unique_ptr<library_db::info_db>& FolderInfoDB)
+                bool bFoundFolderType = library->m_InfoByTypeDataBase.FindAsReadOnly(xresource_editor::folder::trash_guid_v.m_Type, [&](const std::unique_ptr<library_db::info_db>& FolderInfoDB)
                 {
-                    bool bTrashInstanceFound = FolderInfoDB->m_InfoDataBase.FindAsWrite(e10::folder::trash_guid_v.m_Instance, [&](library_db::info_node& TrashNode)
+                    bool bTrashInstanceFound = FolderInfoDB->m_InfoDataBase.FindAsWrite(xresource_editor::folder::trash_guid_v.m_Instance, [&](library_db::info_node& TrashNode)
                     {
                         std::function<void(const xresource::full_guid&)> MoveItemAnsChildrenToTrash = [&](const xresource::full_guid& gDescriptor )
                         {
@@ -2167,7 +2167,7 @@ namespace e10
                                         int Index = 0;
                                         for (auto& E : sourceNode.m_Info.m_RscLinks)
                                         {
-                                            if (E == e10::folder::trash_guid_v)
+                                            if (E == xresource_editor::folder::trash_guid_v)
                                             {
                                                 if (Index != 0)
                                                 {
@@ -2188,7 +2188,7 @@ namespace e10
                                     // Note that we don't remove it from the existing folder... This allows us to restore it back to the original
                                     // folder if it still there as an option
                                     //
-                                    sourceNode.m_Info.m_RscLinks.insert(sourceNode.m_Info.m_RscLinks.begin(), e10::folder::trash_guid_v);
+                                    sourceNode.m_Info.m_RscLinks.insert(sourceNode.m_Info.m_RscLinks.begin(), xresource_editor::folder::trash_guid_v);
 
                                     // Mark this node as it has officially changed
                                     sourceNode.m_InfoChangeCount += 1;
@@ -2435,7 +2435,7 @@ namespace e10
         {
             xerr Error = {};
 
-            assert(libraryGUID.m_Type == e10::project::type_guid_v || libraryGUID.m_Type == e10::library::type_guid_v );
+            assert(libraryGUID.m_Type == xresource_editor::project::type_guid_v || libraryGUID.m_Type == xresource_editor::library::type_guid_v );
             assert(sourceDescriptor.empty()==false);
             assert(sourceParent.empty() == false);
             assert(Target.empty() == false);
@@ -3229,7 +3229,7 @@ namespace e10
                     Name = Info.m_Name.empty() ? "<unnamed>" : Info.m_Name;
                     for (auto& Link : Info.m_RscLinks)
                     {
-                        if (Link.m_Type == e10::folder::type_guid_v && Link.m_Instance.m_Value != e10::folder::trash_guid_v.m_Instance.m_Value)
+                        if (Link.m_Type == xresource_editor::folder::type_guid_v && Link.m_Instance.m_Value != xresource_editor::folder::trash_guid_v.m_Instance.m_Value)
                         {
                             Parent = Link;
                             break;
@@ -3506,13 +3506,13 @@ namespace e10
                 bool bHasTrashcan = false;
                 m_mLibraryDB.FindAsReadOnly(OutGuid, [&](const std::unique_ptr<library_db>& DB)
                 {
-                    DB->m_InfoByTypeDataBase.FindAsReadOnly(e10::folder::trash_guid_v.m_Type, [&](const std::unique_ptr<library_db::info_db>& Info)
+                    DB->m_InfoByTypeDataBase.FindAsReadOnly(xresource_editor::folder::trash_guid_v.m_Type, [&](const std::unique_ptr<library_db::info_db>& Info)
                     {
-                        bHasTrashcan = Info->m_InfoDataBase.FindAsReadOnly(e10::folder::trash_guid_v.m_Instance, [&](const library_db::info_node&){});
+                        bHasTrashcan = Info->m_InfoDataBase.FindAsReadOnly(xresource_editor::folder::trash_guid_v.m_Instance, [&](const library_db::info_node&){});
                     });
                 });
                 std::printf("[MultiLib] before trash NewAsset, bHasTrashcan=%d\n", bHasTrashcan ? 1 : 0); std::fflush(stdout);
-                if (bHasTrashcan == false) NewAsset(OutGuid, e10::folder::trash_guid_v, RootGUID, "Trash");
+                if (bHasTrashcan == false) NewAsset(OutGuid, xresource_editor::folder::trash_guid_v, RootGUID, "Trash");
                 std::printf("[MultiLib] after trash NewAsset\n"); std::fflush(stdout);
             }
             std::printf("[MultiLib] EXIT root/trash bootstrap for guid=%llX\n", (unsigned long long)OutGuid.m_Instance.m_Value); std::fflush(stdout);
@@ -3558,7 +3558,7 @@ namespace e10
         // path, so there's no generic way to read an arbitrary UNLOADED library's config from just its
         // guid. Documented limitation, not silently hidden - correct for the common case (every
         // library actually in play this session is loaded). Lives here (not in E29's own command
-        // layer) so BOTH the command layer AND the generic, shared Asset Browser UI (E10, used by 8
+        // layer) so BOTH the command layer AND the generic, shared Asset Browser UI (xresource_editor, used by 8
         // examples) can walk the same graph without either depending on the other - E29_Commands_
         // LibraryDependency.h calls this directly instead of keeping its own private copy.
         void CollectTransitiveLibraryParents(const std::vector<library::guid>& Roots, library::guid Skip, std::vector<library::guid>& Out) noexcept
@@ -3617,11 +3617,11 @@ namespace e10
             m_AssetPluginsDB.SetupProject(m_ProjectPath);
 
             //
-            // Build the plugin icon atlas (E10_PluginIconAtlas.h) - every plugin's icon.png packed
+            // Build the plugin icon atlas (xresource_editor_plugin_icon_atlas.h) - every plugin's icon.png packed
             // into one CPU xbitmap + per-plugin UV rects. Deliberately headless: this library_mgr
             // must stay usable with no GPU device/render context at all (batch/CLI tools), so the
             // actual GPU texture upload does NOT happen here - it happens lazily, on the Asset
-            // Browser's own rendering side (assert_browser::Render, E10_AssetBrowser.h), the first
+            // Browser's own rendering side (asset_browser::Render, xresource_editor_asset_browser.h), the first
             // time any browser instance actually needs to draw an icon. Non-fatal: a failure here
             // (e.g. a plugin missing its icon.png) just leaves that plugin's icon blank, it
             // shouldn't block opening the project.

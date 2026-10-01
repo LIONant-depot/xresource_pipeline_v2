@@ -1,8 +1,8 @@
-namespace e10
+namespace xresource_editor
 {
-    struct search_tab : e10::asset_browser_tab_base
+    struct search_tab : xresource_editor::asset_browser_tab_base
     {
-        search_tab(assert_browser& Browser, const char* pName)
+        search_tab(asset_browser& Browser, const char* pName)
             : asset_browser_tab_base{ Browser, pName }
             , m_AssetMgr{ *Browser.getAssetMgr() }
         {
@@ -114,10 +114,10 @@ namespace e10
         void RightPanel() noexcept override
         {
             m_AssetMgr.m_mLibraryDB.FindAsReadOnly(m_SelectedLibrary,
-                [&](const std::unique_ptr<e10::library_db>& Lib)
+                [&](const std::unique_ptr<xresource_editor::library_db>& Lib)
                 {
                     Lib->m_InfoByTypeDataBase.FindAsReadOnly(m_SelectedType,
-                        [&](const std::unique_ptr<e10::library_db::info_db>& InfoDB)
+                        [&](const std::unique_ptr<xresource_editor::library_db::info_db>& InfoDB)
                         {
                             float old_font_size = ImGui::GetFont()->Scale;
                             ImGui::GetFont()->Scale *= 0.95f;
@@ -188,7 +188,7 @@ namespace e10
         }
 
 
-        e10::library_mgr&                                   m_AssetMgr;
+        xresource_editor::library_mgr&                                   m_AssetMgr;
         library::guid                                       m_SelectedLibrary   = {};
         xresource::type_guid                                m_SelectedType      = {};
         xresource::full_guid                                m_ParentGUID        = {};

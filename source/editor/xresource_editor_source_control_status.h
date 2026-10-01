@@ -1,5 +1,5 @@
-#ifndef E10_SOURCE_CONTROL_STATUS_H
-#define E10_SOURCE_CONTROL_STATUS_H
+#ifndef XRESOURCE_EDITOR_SOURCE_CONTROL_STATUS_H
+#define XRESOURCE_EDITOR_SOURCE_CONTROL_STATUS_H
 #pragma once
 
 // Source Control ACTIVE side - the idle-triggered refresh that actually talks to a real git/LFS
@@ -9,7 +9,7 @@
 // source_control_abstraction_spec_v1_3.md, Part IV, "Status refresh -> Idle Work".
 //
 // The READ-SIDE cache (status/lock maps, SourceControlRevision, GetCachedFileStatus/GetCachedLockStatus)
-// used to live in this file but was relocated to E10_SourceControlCache.h (beside E10_AssetMgr.h) -
+// used to live in this file but was relocated to xresource_editor_source_control_cache.h (beside xresource_editor_asset_mgr.h) -
 // direct user correction (2026-09-17): that cache is pure data with zero E29 dependency, and needs
 // to be the ONE centralized place every view (Asset Tree badges, the E29 Source Control tab) queries
 // independently, not something owned by one example. This file now only PUBLISHES into it - it's the
@@ -19,13 +19,13 @@
 // One GitLfsWorkspaceSession per open library, lazily created and Connect()'d on first use, kept
 // alive for the life of the process - git/git-lfs subprocess calls are cheap enough per-call that
 // there's no real teardown need before the app exits.
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_CommandGuids.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_command_guids.h"
 #include "dependencies/xundo/source/xundo_system.h"
 #include "dependencies/xeditor/include/xeditor/commands.h"
 #include "dependencies/xeditor/include/xeditor/serialize.h"
 #include "dependencies/xscheduler/source/xscheduler.h"
 #include "dependencies/xsource_control/source/sc_git_lfs_provider.hpp"
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_SourceControlCache.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_source_control_cache.h"
 #include <atomic>
 #include <cwctype>
 #include <memory>
@@ -33,10 +33,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace e10::source_control
+namespace xresource_editor::source_control
 {
     // Lazily creates + Connects one GitLfsWorkspaceSession per library, keyed by the library's own
-    // root path (e10::library_db::m_Library.m_Path) rather than by guid - the session only ever
+    // root path (xresource_editor::library_db::m_Library.m_Path) rather than by guid - the session only ever
     // needs the real filesystem root, and this is the same identity RunSanityCheck's own
     // ScanSceneConsistency already keys its own per-project work by (GameMgr.m_SceneMgr.m_ProjectPath).
     // A nullptr entry is a cached NEGATIVE result (not a git working tree) - remembered so a
@@ -53,9 +53,9 @@ namespace e10::source_control
     // throughout, see this file's own top comment). Returns false if no open library matches (should
     // not happen for a path this file itself sourced from m_mLibraryDB, but a library could in theory
     // have been closed between that read and this call).
-    inline bool FindLibraryGuidByPath(const std::wstring& RootPath, e10::library::guid& OutGuid) noexcept
+    inline bool FindLibraryGuidByPath(const std::wstring& RootPath, xresource_editor::library::guid& OutGuid) noexcept
     {
-        for (auto& L : e10::g_LibMgr.m_mLibraryDB)
+        for (auto& L : xresource_editor::g_LibMgr.m_mLibraryDB)
         {
             if (L.second->m_Library.m_Path == RootPath) { OutGuid = L.first; return true; }
         }
@@ -70,44 +70,44 @@ namespace e10::source_control
     // below) - not on every cache-hit call.
     inline void ValidateDepotLinkConnected(const std::wstring& RootPath, sc::git_lfs::GitLfsWorkspaceSession& Workspace) noexcept
     {
-        e10::library::guid LibGuid{};
+        xresource_editor::library::guid LibGuid{};
         if (!FindLibraryGuidByPath(RootPath, LibGuid)) return;
 
         const auto Info = Workspace.GetWorkspaceInfo();
         const std::string Discovered = !Info.repository.value.empty() ? Info.repository.value : xstrtool::To(Info.root.wstring());
 
         std::string CachedProvider;
-        e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibGuid, [&](const std::unique_ptr<e10::library_db>& DB) { CachedProvider = DB->m_Library.m_DepotProviderId; });
+        xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB) { CachedProvider = DB->m_Library.m_DepotProviderId; });
 
         if (CachedProvider.empty())
         {
             // Never cached before - bootstrap and persist. Adoption, not a mismatch: there is nothing
             // to compare against yet.
-            e10::g_LibMgr.m_mLibraryDB.FindAsWrite(LibGuid, [&](std::unique_ptr<e10::library_db>& DB)
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(LibGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
             {
                 DB->m_Library.m_DepotProviderId   = "git";
                 DB->m_Library.m_DepotRepositoryId = Discovered;
-                DB->m_DepotLinkState              = e10::library_db::depot_link_state::Confirmed;
-                e10::g_LibMgr.SaveLibraryConfig(DB->m_Library);
+                DB->m_DepotLinkState              = xresource_editor::library_db::depot_link_state::Confirmed;
+                xresource_editor::g_LibMgr.SaveLibraryConfig(DB->m_Library);
             });
             return;
         }
 
         std::string CachedId;
-        e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibGuid, [&](const std::unique_ptr<e10::library_db>& DB) { CachedId = DB->m_Library.m_DepotRepositoryId; });
+        xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB) { CachedId = DB->m_Library.m_DepotRepositoryId; });
 
         if (CachedId == Discovered)
         {
-            e10::g_LibMgr.m_mLibraryDB.FindAsWrite(LibGuid, [&](std::unique_ptr<e10::library_db>& DB) { DB->m_DepotLinkState = e10::library_db::depot_link_state::Confirmed; });
+            xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(LibGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB) { DB->m_DepotLinkState = xresource_editor::library_db::depot_link_state::Confirmed; });
             return;
         }
 
         // Real mismatch - the cache is NEVER silently overwritten here; only an explicit re-cache
         // action (not built yet - CLI/UI would call the same bootstrap write above) would accept it.
         const auto Detail = std::format("cached '{}', now resolves to '{}'", CachedId, Discovered);
-        e10::g_LibMgr.m_mLibraryDB.FindAsWrite(LibGuid, [&](std::unique_ptr<e10::library_db>& DB)
+        xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(LibGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
         {
-            DB->m_DepotLinkState  = e10::library_db::depot_link_state::Mismatch;
+            DB->m_DepotLinkState  = xresource_editor::library_db::depot_link_state::Mismatch;
             DB->m_DepotLinkDetail = Detail;
         });
         std::printf("[SC] DEPOT LINK MISMATCH for library at %ls: %s\n", RootPath.c_str(), Detail.c_str()); std::fflush(stdout);
@@ -121,16 +121,16 @@ namespace e10::source_control
     // report" semantics rather than manufacturing a false alarm).
     inline void ValidateDepotLinkNoProvider(const std::wstring& RootPath) noexcept
     {
-        e10::library::guid LibGuid{};
+        xresource_editor::library::guid LibGuid{};
         if (!FindLibraryGuidByPath(RootPath, LibGuid)) return;
 
         std::string CachedProvider;
-        e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibGuid, [&](const std::unique_ptr<e10::library_db>& DB) { CachedProvider = DB->m_Library.m_DepotProviderId; });
+        xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB) { CachedProvider = DB->m_Library.m_DepotProviderId; });
         if (CachedProvider.empty()) return; // never cached - nothing regressed
 
-        e10::g_LibMgr.m_mLibraryDB.FindAsWrite(LibGuid, [&](std::unique_ptr<e10::library_db>& DB)
+        xresource_editor::g_LibMgr.m_mLibraryDB.FindAsWrite(LibGuid, [&](std::unique_ptr<xresource_editor::library_db>& DB)
         {
-            DB->m_DepotLinkState  = e10::library_db::depot_link_state::NoProvider;
+            DB->m_DepotLinkState  = xresource_editor::library_db::depot_link_state::NoProvider;
             DB->m_DepotLinkDetail = std::format("cached as '{}' but no working Git tree found here now", DB->m_Library.m_DepotRepositoryId);
         });
         std::printf("[SC] DEPOT LINK REGRESSION for library at %ls: was under source control, no longer found\n", RootPath.c_str()); std::fflush(stdout);
@@ -210,10 +210,10 @@ namespace e10::source_control
         for (auto& File : StatusResult.files)
         {
             if (!(File.staged || File.modified || File.untracked || File.conflicted)) continue;
-            StatusByPath[e10::source_control::NormalizeKey(File.path.relative)] = File;
+            StatusByPath[xresource_editor::source_control::NormalizeKey(File.path.relative)] = File;
         }
         const std::size_t Count = StatusByPath.size();
-        e10::source_control::PublishLibraryStatusChunk(RootPath, CoveredPrefixes, std::move(StatusByPath));
+        xresource_editor::source_control::PublishLibraryStatusChunk(RootPath, CoveredPrefixes, std::move(StatusByPath));
 
         if (bIncludeLocks && ShouldRefreshLocks(RootPath))
         {
@@ -230,9 +230,9 @@ namespace e10::source_control
                 // library.
                 const auto WorkspacePath = pWorkspace->ToWorkspacePath(Lock.path);
                 if (!WorkspacePath.relative.empty() && *WorkspacePath.relative.begin() == "..") continue;
-                LockByPath[e10::source_control::NormalizeKey(WorkspacePath.relative)] = Lock;
+                LockByPath[xresource_editor::source_control::NormalizeKey(WorkspacePath.relative)] = Lock;
             }
-            e10::source_control::PublishLibraryLocks(RootPath, std::move(LockByPath));
+            xresource_editor::source_control::PublishLibraryLocks(RootPath, std::move(LockByPath));
         }
 
         return Count;
@@ -292,7 +292,7 @@ namespace e10::source_control
         );
     }
 
-    // Demand-driven: a view calls this (via assert_browser::m_OnFolderNavigated) when it needs a
+    // Demand-driven: a view calls this (via asset_browser::m_OnFolderNavigated) when it needs a
     // SPECIFIC folder's status right now, rather than waiting for its turn in the idle-triggered
     // background sweep below. HIGH priority, scoped ONLY to the requested folder (recursively) -
     // direct user request (2026-09-17): "the priority should be based on what the views request...
@@ -300,7 +300,7 @@ namespace e10::source_control
     // the background sweep's own root-level catch-all chunk (locks matter to whatever's on screen).
     inline void RequestPriorityScan(std::wstring RootPath, std::wstring RelativeFolderPath) noexcept
     {
-        const auto Tag = e10::source_control::NormalizeKey(RelativeFolderPath);
+        const auto Tag = xresource_editor::source_control::NormalizeKey(RelativeFolderPath);
         const std::string Pathspec = RelativeFolderPath.empty() ? "." : xstrtool::To(RelativeFolderPath);
         LaunchSourceControlStatusScanChunk(RootPath, L"priority:" + Tag
             , std::vector<std::string>{ Pathspec }, std::vector<std::wstring>{ Tag }, /*bIncludeLocks*/ true
@@ -338,26 +338,26 @@ namespace e10::source_control
     // it and the idle-gated sweep below takes over for keeping it up to date.
     inline void ScanNewlyOpenedLibraries() noexcept
     {
-        for (auto& Lib : e10::g_LibMgr.m_mLibraryDB)
+        for (auto& Lib : xresource_editor::g_LibMgr.m_mLibraryDB)
         {
             const auto& RootPath = Lib.second->m_Library.m_Path;
-            if (!e10::source_control::GetLastRefreshTime(RootPath).has_value())
+            if (!xresource_editor::source_control::GetLastRefreshTime(RootPath).has_value())
                 LaunchSourceControlStatusScan(RootPath);
         }
     }
 
     // The idle task (xeditor::idle_work::m_OnRun): once per idle period, one status scan per open library. Every entry in
-    // e10::g_LibMgr.m_mLibraryDB is, by definition, open. "Run Now" is about the scene scan, so a manual run skips it.
+    // xresource_editor::g_LibMgr.m_mLibraryDB is, by definition, open. "Run Now" is about the scene scan, so a manual run skips it.
     inline void ScanAllLibrariesWhenIdle(bool bManual) noexcept
     {
         if (bManual) return;
-        for (auto& Lib : e10::g_LibMgr.m_mLibraryDB)
+        for (auto& Lib : xresource_editor::g_LibMgr.m_mLibraryDB)
             LaunchSourceControlStatusScan(Lib.second->m_Library.m_Path);
     }
 
     // NOTE: the read accessors that used to live here (GetCachedFileStatus/GetCachedLockStatus/
-    // GetLastRefreshTime) moved to e10::source_control (E10_SourceControlCache.h) - callers should
+    // GetLastRefreshTime) moved to xresource_editor::source_control (xresource_editor_source_control_cache.h) - callers should
     // use those directly; nothing in this file needs to re-export them.
 }
 
-#endif // E10_SOURCE_CONTROL_STATUS_H
+#endif // XRESOURCE_EDITOR_SOURCE_CONTROL_STATUS_H

@@ -1,24 +1,24 @@
-#ifndef E10_PANEL_SOURCE_CONTROL_H
-#define E10_PANEL_SOURCE_CONTROL_H
+#ifndef XRESOURCE_EDITOR_PANEL_SOURCE_CONTROL_H
+#define XRESOURCE_EDITOR_PANEL_SOURCE_CONTROL_H
 #pragma once
 
 // Source Control panel - Phase 4C/4D of the source-control plan (source_control_abstraction_spec_v1_3.md).
 // An INDEPENDENT tab, not a mode of the Asset Tree/Resource Browser - direct user correction
 // (2026-09-17): "the asset window has its mission and is completely different to the source control
 // window... Source control is involved in Assets, Resources, Entities, Project settings, etc." This
-// panel talks only to e10::source_control:: (the centralized cache, E10_SourceControlCache.h) and the
-// E10_Commands_SourceControl.h command bus - it never reaches into
-// E10_asset_browser_files_tab.h/E10_asset_browser_virtual_tree_tab.h's own code, and they never reach
+// panel talks only to xresource_editor::source_control:: (the centralized cache, xresource_editor_source_control_cache.h) and the
+// xresource_editor_commands_source_control.h command bus - it never reaches into
+// xresource_editor_asset_browser_files_tab.h/xresource_editor_asset_browser_virtual_tree_tab.h's own code, and they never reach
 // into this file either.
 //
 // Same self-sufficiency convention as every other kit/E29_Panel_*.h (see E29_Panel_LevelTree.h's own
 // top comment) - includes what it names rather than relying on a distant caller's include order.
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_Commands_SourceControl.h"
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_SourceControlCache.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_commands_source_control.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_source_control_cache.h"
 #include <cmath>
 #include <unordered_set>
 
-namespace e10
+namespace xresource_editor
 {
     // A small rotating-dots spinner, drawn with plain ImDrawList primitives - same "never a font
     // glyph" discipline the SC badges themselves already follow. Animates off ImGui::GetTime(), so
@@ -48,7 +48,7 @@ namespace e10
     }
 }
 
-namespace e10
+namespace xresource_editor
 {
     // One row = one pending (modified/untracked/conflicted) or locked file, from ANY currently open
     // library - "whole project" scope, not scoped to one library's Assets folder (direct user
@@ -56,7 +56,7 @@ namespace e10
     // and GetStatus/ListLocks already run unfiltered against the real working tree).
     struct sc_panel_row
     {
-        e10::library::guid       m_Library;
+        xresource_editor::library::guid       m_Library;
         std::wstring             m_RootPath;      // this library's real root - what ResolveLibraryRootPath would return
         std::wstring             m_RelativePath;  // NormalizeKey'd, relative to m_RootPath
         std::wstring             m_Key;            // composite "<LibraryHex>|<RelativePath>" - unique across the whole project
@@ -64,9 +64,9 @@ namespace e10
         std::optional<sc::LockInfo> m_Lock;
     };
 
-    inline std::wstring SourceControlRowKey(e10::library::guid LibraryGuid, const std::wstring& RelativePath) noexcept
+    inline std::wstring SourceControlRowKey(xresource_editor::library::guid LibraryGuid, const std::wstring& RelativePath) noexcept
     {
-        return xstrtool::To(e10::commands::FormatLibraryGuid(LibraryGuid)) + L"|" + RelativePath;
+        return xstrtool::To(xresource_editor::commands::FormatLibraryGuid(LibraryGuid)) + L"|" + RelativePath;
     }
 
     // Auto-changelist categories - direct user design: "per library should be a change list that
@@ -108,7 +108,7 @@ namespace e10
     // path - path-based, not resource-guid-based, deliberately: git status (or a deleted file) only
     // ever gives us a path, which may not even resolve to a currently-loaded resource. Mirrors the
     // real on-disk roots library::m_UserDescriptorPath/m_SysDescriptorPath/m_ResourcePath establish
-    // (E10_AssetMgr.h) and process_info_job::LoadInfo's own DependencyPath formula for the Logs root -
+    // (xresource_editor_asset_mgr.h) and process_info_job::LoadInfo's own DependencyPath formula for the Logs root -
     // every one of them shares the same "<TypeName>\<xx>\<yy>\<hexInstance...>" shape right after its
     // own root segment (the instance hex is NOT zero-padded to a fixed width - e.g. a real Folder
     // resource's own file is literally "1.desc", not "0000...0001.desc"). Level/Scene resources
@@ -182,25 +182,25 @@ namespace e10
     // "TypeLower|Hex") is scoped inside one already-known library's own bucket, so it isn't unique on
     // its own outside that context - this is the same identity with the library folded in, safe to
     // compare/store anywhere in the panel.
-    inline std::wstring SourceControlGlobalGroupKey(e10::library::guid LibraryGuid, const std::wstring& TypeNameLower, const std::wstring& HexInstance) noexcept
+    inline std::wstring SourceControlGlobalGroupKey(xresource_editor::library::guid LibraryGuid, const std::wstring& TypeNameLower, const std::wstring& HexInstance) noexcept
     {
-        return xstrtool::To(e10::commands::FormatLibraryGuid(LibraryGuid)) + L"|" + TypeNameLower + L"|" + HexInstance;
+        return xstrtool::To(xresource_editor::commands::FormatLibraryGuid(LibraryGuid)) + L"|" + TypeNameLower + L"|" + HexInstance;
     }
 
     // A whole CATEGORY's identity within one library - "LibraryHex|CategoryIndex" - the same live-
     // reference concept as SourceControlGlobalGroupKey one level up the hierarchy (direct user design,
     // 2026-09-18: dragging a category folder like "Scenes & Levels" as a whole superset).
-    inline std::wstring SourceControlGlobalCategoryKey(e10::library::guid LibraryGuid, sc_category Category) noexcept
+    inline std::wstring SourceControlGlobalCategoryKey(xresource_editor::library::guid LibraryGuid, sc_category Category) noexcept
     {
-        return xstrtool::To(e10::commands::FormatLibraryGuid(LibraryGuid)) + L"|" + std::to_wstring(static_cast<int>(Category));
+        return xstrtool::To(xresource_editor::commands::FormatLibraryGuid(LibraryGuid)) + L"|" + std::to_wstring(static_cast<int>(Category));
     }
 
     // A whole LIBRARY's identity - just "LibraryHex" - the same live-reference concept one level up
     // from SourceControlGlobalCategoryKey (direct user design, 2026-09-18: "drag the entire library to
     // my change list... this means the same thing as (All)", scoped to one library instead of a depot).
-    inline std::wstring SourceControlGlobalLibraryKey(e10::library::guid LibraryGuid) noexcept
+    inline std::wstring SourceControlGlobalLibraryKey(xresource_editor::library::guid LibraryGuid) noexcept
     {
-        return xstrtool::To(e10::commands::FormatLibraryGuid(LibraryGuid));
+        return xstrtool::To(xresource_editor::commands::FormatLibraryGuid(LibraryGuid));
     }
 
     // Groups by the CACHED depot identity (library::m_DepotProviderId/m_DepotRepositoryId, Phase B) -
@@ -208,11 +208,11 @@ namespace e10
     // own redundant top-level entry. A library never yet validated (empty m_DepotProviderId) falls
     // back to its own path as a singleton group key - still renders sensibly rather than being
     // silently dropped or lumped in with libraries it may share nothing with.
-    inline std::pair<std::string, std::string> SourceControlDepotKeyAndName(e10::library::guid LibraryGuid) noexcept
+    inline std::pair<std::string, std::string> SourceControlDepotKeyAndName(xresource_editor::library::guid LibraryGuid) noexcept
     {
         std::string ProviderId, RepositoryId;
         std::wstring Path;
-        e10::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<e10::library_db>& DB)
+        xresource_editor::g_LibMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
         {
             ProviderId   = DB->m_Library.m_DepotProviderId;
             RepositoryId = DB->m_Library.m_DepotRepositoryId;
@@ -227,13 +227,13 @@ namespace e10
     }
 
     // Same "read the root folder's own stored Name" source of truth virtual_tree_tab/files_tab's own
-    // GetLibraryDisplayName already use (E10_asset_browser_files_tab.h:380) - a free function here
-    // rather than a class member, since this panel has no assert_browser instance of its own to hang
+    // GetLibraryDisplayName already use (xresource_editor_asset_browser_files_tab.h:380) - a free function here
+    // rather than a class member, since this panel has no asset_browser instance of its own to hang
     // it off of.
-    inline std::string SourceControlLibraryDisplayName(e10::library::guid LibraryGuid) noexcept
+    inline std::string SourceControlLibraryDisplayName(xresource_editor::library::guid LibraryGuid) noexcept
     {
         std::string Name = "<unnamed>";
-        e10::g_LibMgr.getInfo(LibraryGuid, xresource::full_guid{ LibraryGuid.m_Instance, e10::folder::type_guid_v }, [&](const xresource_pipeline::info& Info)
+        xresource_editor::g_LibMgr.getInfo(LibraryGuid, xresource::full_guid{ LibraryGuid.m_Instance, xresource_editor::folder::type_guid_v }, [&](const xresource_pipeline::info& Info)
         {
             if (!Info.m_Name.empty()) Name = Info.m_Name;
         });
@@ -307,7 +307,7 @@ namespace e10
 
         // Multi-select, scoped to whichever list (the auto-tree, or a changelist's own file list) was
         // clicked last - same unordered_set/order/anchor idiom already proven in
-        // E10_asset_browser_files_tab.h, a fresh instance here rather than reused from there (Phase 4C
+        // xresource_editor_asset_browser_files_tab.h, a fresh instance here rather than reused from there (Phase 4C
         // correction: this panel owns its own interaction state end to end). Also doubles as the
         // "Commit Selected" input, at whatever granularity - a whole category (via its own "Select
         // All"), an arbitrary sub-selection, or a single item - direct user requirement: "should still
@@ -357,7 +357,7 @@ namespace e10
         // Left/right split, user-resizable via a draggable divider - direct user request: "the
         // window should have a splitter between the right and the left sections, just like the
         // other windows" (the Assets view named as the concrete example). Negative = "not yet
-        // initialized for this instance", same sentinel convention e10::assert_browser's own
+        // initialized for this instance", same sentinel convention xresource_editor::asset_browser's own
         // m_SplitSize1 already uses for the identical purpose.
         float m_SplitSize = -1.0f;
 
@@ -365,7 +365,7 @@ namespace e10
         // time" - it was being rebuilt from scratch, across every open library, EVERY FRAME the
         // panel was visible, the exact class of bug already fixed once for files_tab's own badges -
         // "there is no reason to sync the FPS of the editor with the computation"). Rebuilt only when
-        // e10::source_control::SourceControlRevision() has actually changed since the last time this
+        // xresource_editor::source_control::SourceControlRevision() has actually changed since the last time this
         // panel applied it, same idiom files_tab already uses.
         std::vector<sc_panel_row> m_CachedRows;
         std::uint64_t              m_LastAppliedRevision = static_cast<std::uint64_t>(-1);
@@ -536,7 +536,7 @@ namespace e10
     // expected" - so this isn't just a display grouping, it's a real promotion (SourceControlAssignLibraryToChangelist
     // already renders identically whether "genuinely" live or auto-promoted, and still shows every
     // category nested inside when opened).
-    inline void SourceControlPromoteToLibraryIfFullyCovered(const std::vector<sc_panel_row>& AllRows, e10::library::guid LibraryGuid, int ChangelistIndex) noexcept
+    inline void SourceControlPromoteToLibraryIfFullyCovered(const std::vector<sc_panel_row>& AllRows, xresource_editor::library::guid LibraryGuid, int ChangelistIndex) noexcept
     {
         if (ChangelistIndex < 0) return;
         bool bAnyRow = false;
@@ -564,7 +564,7 @@ namespace e10
         for (auto& CL : S.m_Changelists)
             CL.m_LiveCategoryKeys.erase(std::remove(CL.m_LiveCategoryKeys.begin(), CL.m_LiveCategoryKeys.end(), CategoryKey), CL.m_LiveCategoryKeys.end());
 
-        e10::library::guid OwningLibrary{};
+        xresource_editor::library::guid OwningLibrary{};
         for (auto& Row : AllRows)
         {
             const auto Class = ClassifyPendingPath(Row.m_RelativePath);
@@ -596,7 +596,7 @@ namespace e10
     // independent live-group references and NEVER re-consolidates them, even once every one of them
     // ends up back in the same changelist together - this is the missing, symmetric counterpart to
     // SourceControlPromoteToLibraryIfFullyCovered, one level down.
-    inline void SourceControlPromoteToCategoryIfFullyCovered(const std::vector<sc_panel_row>& AllRows, e10::library::guid LibraryGuid, sc_category Category, int ChangelistIndex) noexcept
+    inline void SourceControlPromoteToCategoryIfFullyCovered(const std::vector<sc_panel_row>& AllRows, xresource_editor::library::guid LibraryGuid, sc_category Category, int ChangelistIndex) noexcept
     {
         if (ChangelistIndex < 0) return;
         bool bAnyRow = false;
@@ -623,7 +623,7 @@ namespace e10
         for (auto& CL : S.m_Changelists)
             CL.m_LiveGroupKeys.erase(std::remove(CL.m_LiveGroupKeys.begin(), CL.m_LiveGroupKeys.end(), GlobalGroupKey), CL.m_LiveGroupKeys.end());
 
-        e10::library::guid OwningLibrary{};
+        xresource_editor::library::guid OwningLibrary{};
         sc_category OwningCategory = sc_category::Resources;
         for (auto& Row : AllRows)
         {
@@ -832,14 +832,14 @@ namespace e10
     }
 
     // Aggregates GetAllPendingChanges across EVERY currently open library - "whole project" scope.
-    // Same e10::g_LibMgr.m_mLibraryDB iteration idiom ScanAllLibrariesWhenIdle already uses.
+    // Same xresource_editor::g_LibMgr.m_mLibraryDB iteration idiom ScanAllLibrariesWhenIdle already uses.
     inline std::vector<sc_panel_row> BuildSourceControlRows() noexcept
     {
         std::vector<sc_panel_row> Rows;
-        for (auto& Lib : e10::g_LibMgr.m_mLibraryDB)
+        for (auto& Lib : xresource_editor::g_LibMgr.m_mLibraryDB)
         {
             const auto& RootPath = Lib.second->m_Library.m_Path;
-            for (auto& Entry : e10::source_control::GetAllPendingChanges(RootPath))
+            for (auto& Entry : xresource_editor::source_control::GetAllPendingChanges(RootPath))
             {
                 sc_panel_row Row;
                 Row.m_Library      = Lib.first;
@@ -861,14 +861,14 @@ namespace e10
     // plugins) to get its real type_guid, then the resource's own stored Name via getInfo. Falls back
     // to "<TypeName> <hex>" when either step can't resolve (a deleted info.txt, an unregistered/
     // renamed plugin) - never silently drops a real pending file for lack of a pretty name.
-    inline std::string SourceControlResolveResourceName(e10::library::guid LibraryGuid, const std::wstring& TypeNameLower, const std::wstring& HexInstance) noexcept
+    inline std::string SourceControlResolveResourceName(xresource_editor::library::guid LibraryGuid, const std::wstring& TypeNameLower, const std::wstring& HexInstance) noexcept
     {
         const std::string Fallback = std::format("{} {}", xstrtool::To(TypeNameLower), xstrtool::To(HexInstance));
         if (HexInstance.empty()) return Fallback;
 
         xresource::type_guid TypeGuid{};
         bool bFoundType = false;
-        for (auto& Plugin : e10::g_LibMgr.m_AssetPluginsDB.m_lPlugins)
+        for (auto& Plugin : xresource_editor::g_LibMgr.m_AssetPluginsDB.m_lPlugins)
         {
             std::wstring Lower = xstrtool::To(Plugin.m_TypeName);
             std::transform(Lower.begin(), Lower.end(), Lower.begin(), [](wchar_t C) { return static_cast<wchar_t>(std::towlower(C)); });
@@ -878,7 +878,7 @@ namespace e10
 
         const auto Instance = std::strtoull(xstrtool::To(HexInstance).c_str(), nullptr, 16);
         std::string Name;
-        e10::g_LibMgr.getInfo(LibraryGuid, xresource::full_guid{ .m_Instance = { Instance }, .m_Type = TypeGuid }, [&](const xresource_pipeline::info& Info)
+        xresource_editor::g_LibMgr.getInfo(LibraryGuid, xresource::full_guid{ .m_Instance = { Instance }, .m_Type = TypeGuid }, [&](const xresource_pipeline::info& Info)
         {
             if (!Info.m_Name.empty()) Name = Info.m_Name;
         });
@@ -912,7 +912,7 @@ namespace e10
 
     struct sc_library_group
     {
-        e10::library::guid                m_Library;
+        xresource_editor::library::guid                m_Library;
         std::string                        m_DisplayName;
         std::array<sc_category_bucket, sc_category_count_v> m_Categories{};
     };
@@ -1029,7 +1029,7 @@ namespace e10
     // Shared by the Pending Changes list AND a changelist's own file list (Phase 4C - ONE
     // implementation, not duplicated per list, per the project's no-redundant-data rule). Acts on the whole
     // active multi-selection when the right-clicked row is part of one, otherwise just that one row -
-    // same "right-click preserves/collapses selection" rule E10_asset_browser_files_tab.h's own
+    // same "right-click preserves/collapses selection" rule xresource_editor_asset_browser_files_tab.h's own
     // RowContext popup already established (independently re-implemented here, not shared code, per
     // the Phase 4C design correction).
     inline void RenderSourceControlContextMenu(xundo::system& Undo, const std::vector<sc_panel_row>& AllRows, const std::wstring& ClickedKey) noexcept
@@ -1056,13 +1056,13 @@ namespace e10
             {
                 for (auto* R : Selected)
                     xeditor::RunQuery(Undo, std::format("SourceControlLock -Library {} -Path {}"
-                        , e10::commands::FormatLibraryGuid(R->m_Library), e10::commands::EncodeAssetPath(R->m_RelativePath)));
+                        , xresource_editor::commands::FormatLibraryGuid(R->m_Library), xresource_editor::commands::EncodeAssetPath(R->m_RelativePath)));
             }
             if (ImGui::MenuItem("Unlock", nullptr, false, bAnyLockedByMe))
             {
                 for (auto* R : Selected)
                     xeditor::RunQuery(Undo, std::format("SourceControlUnlock -Library {} -Path {}"
-                        , e10::commands::FormatLibraryGuid(R->m_Library), e10::commands::EncodeAssetPath(R->m_RelativePath)));
+                        , xresource_editor::commands::FormatLibraryGuid(R->m_Library), xresource_editor::commands::EncodeAssetPath(R->m_RelativePath)));
             }
             if (ImGui::MenuItem("Undo Changes...", nullptr, false, bAnyModified))
                 S.m_bUndoChangesConfirmPending = true;
@@ -1137,7 +1137,7 @@ namespace e10
             {
                 for (auto* R : Selected)
                     xeditor::RunQuery(Undo, std::format("SourceControlRevert -Library {} -Path {}"
-                        , e10::commands::FormatLibraryGuid(R->m_Library), e10::commands::EncodeAssetPath(R->m_RelativePath)));
+                        , xresource_editor::commands::FormatLibraryGuid(R->m_Library), xresource_editor::commands::EncodeAssetPath(R->m_RelativePath)));
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SetItemDefaultFocus();
@@ -1149,17 +1149,17 @@ namespace e10
 
     // Same badge derivation the Asset Tree's own badges/tooltip already use - one place, not
     // recomputed ad hoc at each of the 3 sites below (draw, tooltip, sort).
-    inline e10::asset_status_badge SourceControlRowStatusBadge(const sc_panel_row& Row) noexcept
+    inline xresource_editor::asset_status_badge SourceControlRowStatusBadge(const sc_panel_row& Row) noexcept
     {
-        if (Row.m_Status.untracked) return e10::asset_status_badge::Untracked;
-        if (Row.m_Status.modified || Row.m_Status.staged || Row.m_Status.conflicted) return e10::asset_status_badge::Modified;
-        return e10::asset_status_badge::Clean; // reached via a lock-only row - see GetAllPendingChanges' own comment
+        if (Row.m_Status.untracked) return xresource_editor::asset_status_badge::Untracked;
+        if (Row.m_Status.modified || Row.m_Status.staged || Row.m_Status.conflicted) return xresource_editor::asset_status_badge::Modified;
+        return xresource_editor::asset_status_badge::Clean; // reached via a lock-only row - see GetAllPendingChanges' own comment
     }
 
-    inline e10::asset_lock_badge SourceControlRowLockBadge(const sc_panel_row& Row) noexcept
+    inline xresource_editor::asset_lock_badge SourceControlRowLockBadge(const sc_panel_row& Row) noexcept
     {
-        if (!Row.m_Lock) return e10::asset_lock_badge::None;
-        return Row.m_Lock->ownership == sc::LockOwnership::CurrentUser ? e10::asset_lock_badge::LockedByMe : e10::asset_lock_badge::LockedByOther;
+        if (!Row.m_Lock) return xresource_editor::asset_lock_badge::None;
+        return Row.m_Lock->ownership == sc::LockOwnership::CurrentUser ? xresource_editor::asset_lock_badge::LockedByMe : xresource_editor::asset_lock_badge::LockedByOther;
     }
 
     // Identical priority order to files_tab's own SourceControlSortRank (untracked, modified,
@@ -1170,18 +1170,18 @@ namespace e10
         const auto Status = SourceControlRowStatusBadge(Row);
         const auto Lock   = SourceControlRowLockBadge(Row);
 
-        if (Lock == e10::asset_lock_badge::None)
+        if (Lock == xresource_editor::asset_lock_badge::None)
         {
             switch (Status)
             {
-                case e10::asset_status_badge::Untracked: return 0;
-                case e10::asset_status_badge::Modified:  return 1;
-                case e10::asset_status_badge::Clean:     return 4;
+                case xresource_editor::asset_status_badge::Untracked: return 0;
+                case xresource_editor::asset_status_badge::Modified:  return 1;
+                case xresource_editor::asset_status_badge::Clean:     return 4;
                 default:                                 return 6;
             }
         }
-        if (Lock == e10::asset_lock_badge::LockedByOther) return 3;
-        return (Status == e10::asset_status_badge::Modified) ? 2 : 5;
+        if (Lock == xresource_editor::asset_lock_badge::LockedByOther) return 3;
+        return (Status == xresource_editor::asset_status_badge::Modified) ? 2 : 5;
     }
 
     // Renders one row's CELLS - caller must already be inside an active table row (TableNextRow()
@@ -1208,14 +1208,14 @@ namespace e10
             const ImVec2 CellMin = ImGui::GetCursorScreenPos();
             const float  RowH    = ImGui::GetTextLineHeight();
             constexpr float BadgeSize = 11.0f; // matches files_tab's own SC column badge size
-            e10::DrawSourceControlBadge(ImGui::GetWindowDrawList()
+            xresource_editor::DrawSourceControlBadge(ImGui::GetWindowDrawList()
                 , { CellMin.x + BadgeSize * 0.5f, CellMin.y + RowH * 0.5f }, BadgeSize, StatusBadge, LockBadge);
 
             ImGui::InvisibleButton("##SCHover", ImVec2(ImGui::GetContentRegionAvail().x, RowH));
             if (ImGui::IsItemHovered())
             {
                 const char* Title = ""; const char* Desc = "";
-                e10::GetSourceControlTooltipText(StatusBadge, LockBadge, Title, Desc);
+                xresource_editor::GetSourceControlTooltipText(StatusBadge, LockBadge, Title, Desc);
                 ImGui::BeginTooltip();
                 ImGui::Text("%s", Title);
                 ImGui::TextDisabled("%s", Desc);
@@ -1242,7 +1242,7 @@ namespace e10
         // shared global state and every row here is a stable key into it.
         //
         // Gated behind an explicit 12px drag-distance check, NOT a bare BeginDragDropSource() call -
-        // same real, already-diagnosed bug class E10_asset_browser_files_tab.h's own row drag source
+        // same real, already-diagnosed bug class xresource_editor_asset_browser_files_tab.h's own row drag source
         // hit and fixed: imgui_widgets.cpp's ButtonBehavior() refuses to report a PressedOnClickRelease
         // item (a plain Selectable()) as "pressed" on release once g.DragDropActive went true during
         // that same press-hold, so an unguarded BeginDragDropSource() swallows ordinary clicks the
@@ -1305,7 +1305,7 @@ namespace e10
             const ImVec2 CellMin = ImGui::GetItemRectMin();
             const ImVec2 CellMax = ImGui::GetItemRectMax();
             const ImVec2 Center{ (CellMin.x + CellMax.x) * 0.5f, (CellMin.y + CellMax.y) * 0.5f };
-            e10::DrawPadlockShape(ImGui::GetWindowDrawList(), Center, 11.0f, IM_COL32(180, 180, 185, 255));
+            xresource_editor::DrawPadlockShape(ImGui::GetWindowDrawList(), Center, 11.0f, IM_COL32(180, 180, 185, 255));
             if (ImGui::IsItemHovered())
             {
                 ImGui::BeginTooltip();
@@ -1432,7 +1432,7 @@ namespace e10
             // one known library's own bucket) - prefixing the library turns it into the SAME global
             // format SourceControlGlobalGroupKey produces, without re-deriving Type/Hex from scratch.
             const std::wstring GlobalGroupKey = Group.m_Rows.empty() ? std::wstring{}
-                : (xstrtool::To(e10::commands::FormatLibraryGuid(Group.m_Rows.front()->m_Library)) + L"|" + Group.m_GroupKey);
+                : (xstrtool::To(xresource_editor::commands::FormatLibraryGuid(Group.m_Rows.front()->m_Library)) + L"|" + Group.m_GroupKey);
             RenderSourceControlFolder(Undo, AllRows, std::format("\xEE\xA3\x95 {}", Group.m_DisplayName), Group.m_Rows, GlobalGroupKey);
             ImGui::PopID();
         }
@@ -1454,7 +1454,7 @@ namespace e10
     // is Scenes & Levels' actual visual PARENT, so dragging it must take its child along, same as
     // dragging any other parent folder would.
     inline void RenderSourceControlCategoryFolder(xundo::system& Undo, const std::vector<sc_panel_row>& AllRows, const char* Label
-        , const sc_category_bucket& Bucket, e10::library::guid LibraryGuid, sc_category Category
+        , const sc_category_bucket& Bucket, xresource_editor::library::guid LibraryGuid, sc_category Category
         , const char* NestedLabel = nullptr, const sc_category_bucket* NestedBucket = nullptr, sc_category NestedCategory = sc_category::Resources) noexcept
     {
         const std::size_t Total = Bucket.RowCount() + (NestedBucket ? NestedBucket->RowCount() : 0);
@@ -1623,7 +1623,7 @@ namespace e10
     // Commit with "Unable find the command" - the Commit & Push button could never work. Query() is the method
     // that searches the query registry. It also hands back the command's literal result text ("Pulled",
     // "Outcome: Published", ...), which this panel classifies itself by each command's "<Verb>: " failure-message
-    // convention (see E10_Commands_SourceControl.h) - xeditor::Run() would treat any non-empty result as a failure.
+    // convention (see xresource_editor_commands_source_control.h) - xeditor::Run() would treat any non-empty result as a failure.
     [[nodiscard]] inline std::string SourceControlRunQuery(xundo::system& Undo, const std::string& Cmd) noexcept
     {
         xeditor::LogConsole(Cmd, xeditor::log_source::User);
@@ -1648,7 +1648,7 @@ namespace e10
         if (Keys.empty() || Comment.empty()) return {};
 
         std::unordered_map<std::string, std::vector<std::wstring>> PathsByLibraryHex; // FormatLibraryGuid -> relative paths
-        std::unordered_map<std::string, e10::library::guid> LibraryByHex;
+        std::unordered_map<std::string, xresource_editor::library::guid> LibraryByHex;
         for (auto& Key : Keys)
         {
             const auto Sep = Key.find(L'|');
@@ -1659,7 +1659,7 @@ namespace e10
         }
         for (auto& Row : BuildSourceControlRows())
         {
-            const std::string LibHex = e10::commands::FormatLibraryGuid(Row.m_Library);
+            const std::string LibHex = xresource_editor::commands::FormatLibraryGuid(Row.m_Library);
             if (PathsByLibraryHex.count(LibHex)) LibraryByHex[LibHex] = Row.m_Library;
         }
 
@@ -1700,7 +1700,7 @@ namespace e10
 
             // Neither Pull nor Commit themselves bump SourceControlRevision() - kick a fresh scan so
             // the Pending Changes list catches up promptly instead of waiting for the next idle period.
-            e10::source_control::LaunchSourceControlStatusScan(e10::commands::ResolveLibraryRootPath(LibraryByHex[LibHex]));
+            xresource_editor::source_control::LaunchSourceControlStatusScan(xresource_editor::commands::ResolveLibraryRootPath(LibraryByHex[LibHex]));
         }
 
         return Summary;
@@ -1825,7 +1825,7 @@ namespace e10
         , const std::vector<const sc_panel_row*>& RowsToShow, const char* TableId, const sc_changelist* CL = nullptr) noexcept
     {
         struct changelist_group { std::wstring m_GroupKey; std::string m_DisplayName; std::vector<const sc_panel_row*> m_Rows; };
-        struct changelist_category { std::wstring m_CategoryKey; sc_category m_Category; e10::library::guid m_Library; std::vector<changelist_group> m_Groups; std::vector<const sc_panel_row*> m_Ungrouped; };
+        struct changelist_category { std::wstring m_CategoryKey; sc_category m_Category; xresource_editor::library::guid m_Library; std::vector<changelist_group> m_Groups; std::vector<const sc_panel_row*> m_Ungrouped; };
 
         std::vector<sc_library_group> Libraries; // reuses the real left-tree type directly - a live
                                                   // library's rows slot into it exactly like BuildDepotGroups
@@ -1982,7 +1982,7 @@ namespace e10
         // source_control_panel_state::m_CachedRows' own comment. BuildSourceControlRows() copies both
         // caches' contents out from under a mutex for every open library, then formats/sorts them
         // into rows - real, non-trivial work that has no reason to repeat 60 times a second.
-        const std::uint64_t CurrentRevision = e10::source_control::SourceControlRevision().load(std::memory_order_relaxed);
+        const std::uint64_t CurrentRevision = xresource_editor::source_control::SourceControlRevision().load(std::memory_order_relaxed);
         if (S.m_LastAppliedRevision != CurrentRevision)
         {
             S.m_CachedRows = BuildSourceControlRows();
@@ -2006,7 +2006,7 @@ namespace e10
         // with where the right "Changelists" column actually starts. User-resizable via a draggable
         // divider (direct user request: "the window should have a splitter between the right and
         // the left sections, just like the other windows" - the Assets view named as the concrete
-        // example) - reuses e10::assert_browser::Splitter (made public for exactly this kind of
+        // example) - reuses xresource_editor::asset_browser::Splitter (made public for exactly this kind of
         // reuse) rather than a second, separately-invented draggable-divider implementation.
         // S.m_SplitSize persists the LEFT width across frames; only initialized once (negative
         // sentinel) and clamped every frame after.
@@ -2019,14 +2019,14 @@ namespace e10
 
         if (ImGui::Button("Pull All"))
         {
-            for (auto& Lib : e10::g_LibMgr.m_mLibraryDB)
+            for (auto& Lib : xresource_editor::g_LibMgr.m_mLibraryDB)
             {
-                S.m_StatusLine = SourceControlRunQuery(Undo, std::format("SourceControlPull -Library {}", e10::commands::FormatLibraryGuid(Lib.first)));
-                e10::source_control::LaunchSourceControlStatusScan(Lib.second->m_Library.m_Path); // Pull doesn't itself bump the revision - kick a fresh scan so the list catches up promptly
+                S.m_StatusLine = SourceControlRunQuery(Undo, std::format("SourceControlPull -Library {}", xresource_editor::commands::FormatLibraryGuid(Lib.first)));
+                xresource_editor::source_control::LaunchSourceControlStatusScan(Lib.second->m_Library.m_Path); // Pull doesn't itself bump the revision - kick a fresh scan so the list catches up promptly
             }
         }
         ImGui::SameLine();
-        ImGui::TextDisabled("%zu pending change(s) across %zu open library/ies", Rows.size(), (std::size_t)e10::g_LibMgr.m_mLibraryDB.size());
+        ImGui::TextDisabled("%zu pending change(s) across %zu open library/ies", Rows.size(), (std::size_t)xresource_editor::g_LibMgr.m_mLibraryDB.size());
 
         // Aligned with the Changelists column below it (direct user request) - SameLine's offset
         // parameter is an absolute X position from the window's own left edge, the same LeftWidth
@@ -2039,11 +2039,11 @@ namespace e10
             ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Changelists for: \xEE\xA3\xB1 %s", SelectedDepotName.c_str());
 
         // Splitter drawn right here, at the cursor position where the two columns are about to
-        // start (same convention e10::assert_browser::Splitter's own established call sites use) -
+        // start (same convention xresource_editor::asset_browser::Splitter's own established call sites use) -
         // it positions its drag-handle using *size1's CURRENT value, updates size1/size2 only while
         // actively being dragged, then restores the cursor so the BeginChild calls below start
         // exactly where they would have without it.
-        e10::assert_browser::Splitter(true, SplitterThickness, &LeftWidth, &RightWidth, 100.0f, 100.0f, TotalWidth, ImGui::GetContentRegionAvail().y);
+        xresource_editor::asset_browser::Splitter(true, SplitterThickness, &LeftWidth, &RightWidth, 100.0f, 100.0f, TotalWidth, ImGui::GetContentRegionAvail().y);
         S.m_SplitSize = LeftWidth;
 
         ImGui::BeginChild("SCPending", ImVec2(LeftWidth, -ImGui::GetFrameHeightWithSpacing()), true);
@@ -2052,7 +2052,7 @@ namespace e10
             // TEMP diagnostic (2026-09-17) - edge-print only (not every frame) so we can confirm
             // whether the RENDER loop ever actually observes IsScanInProgress()==true at all.
             static bool bWasScanning = false;
-            const bool bIsScanning = e10::source_control::IsScanInProgress();
+            const bool bIsScanning = xresource_editor::source_control::IsScanInProgress();
             if (bIsScanning != bWasScanning)
             {
                 std::printf("[SC] panel observed IsScanInProgress() -> %s at t=%.3f\n", bIsScanning ? "true" : "false", ImGui::GetTime());
@@ -2060,7 +2060,7 @@ namespace e10
                 bWasScanning = bIsScanning;
             }
         }
-        if (e10::source_control::IsScanInProgress())
+        if (xresource_editor::source_control::IsScanInProgress())
             S.m_SpinnerVisibleUntil = ImGui::GetTime() + 0.4; // keep bumping forward while genuinely scanning
         if (ImGui::GetTime() < S.m_SpinnerVisibleUntil)
         {
@@ -2348,4 +2348,4 @@ namespace e10
     }
 }
 
-#endif // E10_PANEL_SOURCE_CONTROL_H
+#endif // XRESOURCE_EDITOR_PANEL_SOURCE_CONTROL_H

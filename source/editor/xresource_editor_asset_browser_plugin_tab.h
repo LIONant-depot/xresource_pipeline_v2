@@ -1,26 +1,26 @@
-#ifndef E10_ASSET_BROWSER_PLUGIN_TAB_H
-#define E10_ASSET_BROWSER_PLUGIN_TAB_H
+#ifndef XRESOURCE_EDITOR_ASSET_BROWSER_PLUGIN_TAB_H
+#define XRESOURCE_EDITOR_ASSET_BROWSER_PLUGIN_TAB_H
 #pragma once
 
 // Resource Plugin window - Phase 2 of the Asset Browser window-split plan (see plan file
 // lively-knitting-sifakis.md). DOCKABLE-only (see browser_registration<>'s own comment in
-// E10_AssetBrowser.h - never makes sense inside a one-shot POPUP asset picker): left = selectable list
+// xresource_editor_asset_browser.h - never makes sense inside a one-shot POPUP asset picker): left = selectable list
 // of every loaded plugin, right = that plugin's existing reflected properties via the standard
 // xproperty::inspector pattern already used throughout this codebase for a single object (e.g.
 // E20_Material_Instance_Editor.cpp's own "Inspector"/AppendEntityComponent shape), plus a view-only
 // "Git" section showing which depot the plugin lives in.
 //
 // The git-remote lookup shells out per-plugin, lazily, cached until a manual refresh - deliberately
-// lives HERE, not in E10_PluginMgr.h/asset_plugins_db, to keep the asset mgr headless (same split this
+// lives HERE, not in xresource_editor_plugin_mgr.h/asset_plugins_db, to keep the asset mgr headless (same split this
 // project already used for the plugin icon atlas's GPU-upload half - see
-// feedback_asset_mgr_stays_headless memory / E10_PluginIconAtlas.h's own top comment). No new stored/
+// feedback_asset_mgr_stays_headless memory / xresource_editor_plugin_icon_atlas.h's own top comment). No new stored/
 // serialized field on pipeline_plugin - each plugin folder is already its own git clone on disk
 // (example.lionprj/Cache/Plugins/*.plugin), so the URL is always accurate and there's nothing to keep
 // in sync across 13+ plugin manifests.
 
 #include <cstdio>
 
-namespace e10
+namespace xresource_editor
 {
     // Inherits xproperty::inspector (rather than holding one as a member) deliberately: inspector's
     // only PUBLIC render entry point (Show(Context, Callback)) always opens its own top-level
@@ -33,9 +33,9 @@ namespace e10
     // `protected` - inheriting is the standard, intended way to reach a protected member from outside
     // the library without patching xproperty itself (the class already has a virtual destructor, so
     // it's designed to support being a base).
-    struct plugin_tab : e10::asset_browser_tab_base, xproperty::inspector
+    struct plugin_tab : xresource_editor::asset_browser_tab_base, xproperty::inspector
     {
-        plugin_tab(assert_browser& Browser, const char* pName)
+        plugin_tab(asset_browser& Browser, const char* pName)
             : asset_browser_tab_base{ Browser, pName }
             , xproperty::inspector{ "Resource Plugin Properties" }
             , m_AssetMgr{ *Browser.getAssetMgr() }
@@ -188,7 +188,7 @@ namespace e10
             const bool bHasSelection = m_SelectedIndex >= 0 && m_SelectedIndex < static_cast<int>(m_AssetMgr.m_AssetPluginsDB.m_lPlugins.size());
 
             // Properties on the left, Git on the right - swapped from the original layout per direct
-            // user request - separated by a draggable Splitter() (assert_browser::Splitter, made public
+            // user request - separated by a draggable Splitter() (asset_browser::Splitter, made public
             // for exactly this reuse - see its own comment) rather than a fixed width; another direct
             // user request reversing the earlier "fixed, not dynamic" call for this specific border.
             // The panel structure itself always renders, selection or not ("the property window should
@@ -209,7 +209,7 @@ namespace e10
 
             float PropertiesWidth = m_PropertiesSplitSize;
             float GitWidth        = TotalWidth - PropertiesWidth - ButtonWidth;
-            assert_browser::Splitter(true, ButtonWidth, &PropertiesWidth, &GitWidth, 100.0f, 100.0f, TotalWidth, TotalHeight);
+            asset_browser::Splitter(true, ButtonWidth, &PropertiesWidth, &GitWidth, 100.0f, 100.0f, TotalWidth, TotalHeight);
             m_PropertiesSplitSize = PropertiesWidth;
 
             if (ImGui::BeginChild("Properties", ImVec2(PropertiesWidth, TotalHeight)))
@@ -306,7 +306,7 @@ namespace e10
             ImGui::EndChild();
         }
 
-        e10::library_mgr&                              m_AssetMgr;
+        xresource_editor::library_mgr&                              m_AssetMgr;
         int                                             m_SelectedIndex       = -1;
         int                                             m_SelectedExtraIndex  = -1;
         float                                           m_PropertiesSplitSize = -1.0f;

@@ -1,5 +1,5 @@
-#ifndef E10_ASSET_BROWSER_FILES_TAB_H
-#define E10_ASSET_BROWSER_FILES_TAB_H
+#ifndef XRESOURCE_EDITOR_ASSET_BROWSER_FILES_TAB_H
+#define XRESOURCE_EDITOR_ASSET_BROWSER_FILES_TAB_H
 #pragma once
 
 #include <unordered_set>
@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <format>
 #include "imgui_internal.h"     // For BeginDragDropTargetCustom (background drop target, 5C)
-#include "E10_AssetOleDrag.h"   // Real Win32 OLE drag-out to Explorer (Phase 6)
+#include "xresource_editor_asset_ole_drag.h"   // Real Win32 OLE drag-out to Explorer (Phase 6)
 #include <shellapi.h>           // ShellExecuteW - double-click-to-open (Phase 6 polish)
 #include <shlobj.h>             // SHOpenWithDialog - "Open With..." (Phase 4B follow-up)
 
@@ -16,7 +16,7 @@
 // lively-knitting-sifakis.md). READ-ONLY BROWSING ONLY - Phase 4 adds Copy/Cut/Rename/Delete plus
 // cascade-updating any descriptor that references a moved/renamed file; none of that exists yet, this
 // phase is purely visual/navigational so it carries no lock-order or command-design risk at all.
-// DOCKABLE-only (see browser_registration<>'s own comment in E10_AssetBrowser.h).
+// DOCKABLE-only (see browser_registration<>'s own comment in xresource_editor_asset_browser.h).
 //
 // Left = folder tree of each library's REAL Assets/ folder on disk (<Library.m_Path>/Assets - NOT
 // library_db's virtual descriptor tree, which is what virtual_tree_tab already browses). Right = the
@@ -32,11 +32,11 @@
 // matching this project's own "keep it simple first" discipline. Real project Assets/ folders are not
 // large enough for this to matter in practice; revisit only if it demonstrably does.
 
-namespace e10
+namespace xresource_editor
 {
-    struct files_tab : e10::asset_browser_tab_base
+    struct files_tab : xresource_editor::asset_browser_tab_base
     {
-        files_tab(assert_browser& Browser, const char* pName)
+        files_tab(asset_browser& Browser, const char* pName)
             : asset_browser_tab_base{ Browser, pName }
             , m_AssetMgr{ *Browser.getAssetMgr() }
         {
@@ -198,7 +198,7 @@ namespace e10
         //=============================================================================
         // Path history - same shape as virtual_tree_tab's own m_PathHistoryList/m_PathHistoryListRU/
         // m_PathHistoryIndex (UpdateHistoryLRU/PathHistoryUpdate there), just keyed on
-        // (library::guid, std::filesystem::path) instead of (library::guid, e10::folder::guid). This is
+        // (library::guid, std::filesystem::path) instead of (library::guid, xresource_editor::folder::guid). This is
         // the ONE place selection changes - every navigation (tree click, breadcrumb, sibling popup,
         // history list, right-panel double-click) routes through PathHistoryUpdate() so back/forward
         // stays consistent regardless of where the click came from.
@@ -233,12 +233,12 @@ namespace e10
         // way to know just happened. Recomputing them fresh every frame instead fixed the staleness
         // but was rightly rejected too - "there is no reason to sync the FPS of the editor with the
         // computation of the badges." The actual fix: batch-recompute for every cached entry, but
-        // ONLY when m_Browser.m_OnGetSourceControlRevision() (backed by e10::source_control::
+        // ONLY when m_Browser.m_OnGetSourceControlRevision() (backed by xresource_editor::source_control::
         // SourceControlRevision(), bumped once per completed
         // background scan) has actually changed since the last time this tab applied it - see
         // RightPanel()'s own m_LastAppliedSourceControlRevision check. Decoupled from both frame
         // rate AND folder navigation; reacts to the real event (a scan finishing), nothing else.
-        struct file_entry { std::wstring m_Name; bool m_bDirectory; std::uintmax_t m_Size; std::filesystem::file_time_type m_LastWriteTime; std::size_t m_DependentCount = 0; e10::asset_status_badge m_StatusBadge = e10::asset_status_badge::None; e10::asset_lock_badge m_LockBadge = e10::asset_lock_badge::None; };
+        struct file_entry { std::wstring m_Name; bool m_bDirectory; std::uintmax_t m_Size; std::filesystem::file_time_type m_LastWriteTime; std::size_t m_DependentCount = 0; xresource_editor::asset_status_badge m_StatusBadge = xresource_editor::asset_status_badge::None; xresource_editor::asset_lock_badge m_LockBadge = xresource_editor::asset_lock_badge::None; };
 
         void UpdateHistoryLRU() noexcept
         {
@@ -384,7 +384,7 @@ namespace e10
             // none, matching a recurring trap already hit elsewhere in this codebase's own reflection/
             // container helpers (see xgpu_xcontainer_noexcept_lambda_trait_trap in memory).
             std::string Name = "<unnamed>";
-            m_AssetMgr.getInfo(LibraryGuid, xresource::full_guid{ LibraryGuid.m_Instance, e10::folder::type_guid_v }, [&](const xresource_pipeline::info& Info)
+            m_AssetMgr.getInfo(LibraryGuid, xresource::full_guid{ LibraryGuid.m_Instance, xresource_editor::folder::type_guid_v }, [&](const xresource_pipeline::info& Info)
             {
                 if (!Info.m_Name.empty()) Name = Info.m_Name;
             });
@@ -411,15 +411,15 @@ namespace e10
         // Recomputes ONE row's source-control badges - called only from RightPanel()'s own batch
         // refresh (revision-gated, see file_entry's own comment), never per-frame. Folders always
         // report None/None (no git status of their own worth showing).
-        void GetSourceControlBadges(const file_entry& E, e10::asset_status_badge& OutStatus, e10::asset_lock_badge& OutLock) const noexcept
+        void GetSourceControlBadges(const file_entry& E, xresource_editor::asset_status_badge& OutStatus, xresource_editor::asset_lock_badge& OutLock) const noexcept
         {
-            OutStatus = e10::asset_status_badge::None;
-            OutLock   = e10::asset_lock_badge::None;
+            OutStatus = xresource_editor::asset_status_badge::None;
+            OutLock   = xresource_editor::asset_lock_badge::None;
             if (E.m_bDirectory || m_bBrowsingTrash) return;
 
             const std::wstring RelPath = ToLibraryRelPath(m_SelectedFolder / E.m_Name);
-            if (m_Browser.m_OnGetAssetStatusBadge) OutStatus = static_cast<e10::asset_status_badge>(m_Browser.m_OnGetAssetStatusBadge(m_SelectedLibrary, RelPath));
-            if (m_Browser.m_OnGetAssetLockBadge)   OutLock   = static_cast<e10::asset_lock_badge>(m_Browser.m_OnGetAssetLockBadge(m_SelectedLibrary, RelPath));
+            if (m_Browser.m_OnGetAssetStatusBadge) OutStatus = static_cast<xresource_editor::asset_status_badge>(m_Browser.m_OnGetAssetStatusBadge(m_SelectedLibrary, RelPath));
+            if (m_Browser.m_OnGetAssetLockBadge)   OutLock   = static_cast<xresource_editor::asset_lock_badge>(m_Browser.m_OnGetAssetLockBadge(m_SelectedLibrary, RelPath));
         }
 
         // Sort priority for the SC column - direct user-specified order: untracked, modified,
@@ -431,18 +431,18 @@ namespace e10
             const auto Status = E.m_StatusBadge;
             const auto Lock   = E.m_LockBadge;
 
-            if (Lock == e10::asset_lock_badge::None)
+            if (Lock == xresource_editor::asset_lock_badge::None)
             {
                 switch (Status)
                 {
-                    case e10::asset_status_badge::Untracked: return 0;
-                    case e10::asset_status_badge::Modified:  return 1;
-                    case e10::asset_status_badge::Clean:     return 4;
+                    case xresource_editor::asset_status_badge::Untracked: return 0;
+                    case xresource_editor::asset_status_badge::Modified:  return 1;
+                    case xresource_editor::asset_status_badge::Clean:     return 4;
                     default:                                 return 6; // None
                 }
             }
-            if (Lock == e10::asset_lock_badge::LockedByOther) return 3;
-            return (Status == e10::asset_status_badge::Modified) ? 2 : 5; // LockedByMe: gold vs green
+            if (Lock == xresource_editor::asset_lock_badge::LockedByOther) return 3;
+            return (Status == xresource_editor::asset_status_badge::Modified) ? 2 : 5; // LockedByMe: gold vs green
         }
 
         // Every mutation takes an EXPLICIT LibraryGuid rather than assuming m_SelectedLibrary (the
@@ -897,13 +897,13 @@ namespace e10
             return Result;
         }
 
-        // OS-level drag-out (Phase 6, E10_AssetOleDrag.h) - true once the cursor has left the real
+        // OS-level drag-out (Phase 6, xresource_editor_asset_ole_drag.h) - true once the cursor has left the real
         // Win32 rect of the main window, so the two drag-source call sites below know when to hand off
         // from ImGui's own in-app payload to a real DoDragDrop/CF_HDROP session instead. Returns false
         // (in-app-only, today's exact behavior) whenever the hook isn't wired - every consumer except
         // E29 (RegisterAssetBrowserCallbacks) - or the Asset Tree is currently undocked into its own
         // multi-viewport child HWND, which this hook deliberately can't see (see m_OnGetMainWindowHandle's
-        // own comment in E10_AssetBrowser.h for why that's an accepted scope limit, not a bug).
+        // own comment in xresource_editor_asset_browser.h for why that's an accepted scope limit, not a bug).
         bool IsCursorOutsideMainWindow() const noexcept
         {
             if (!m_Browser.m_OnGetMainWindowHandle) return false;
@@ -928,7 +928,7 @@ namespace e10
                 AbsolutePaths.push_back((AssetsRoot / RelPath).wstring());
 
             const HWND hWnd = reinterpret_cast<HWND>(m_Browser.m_OnGetMainWindowHandle());
-            e10::ole_drag::RunFileDragOut(hWnd, std::move(AbsolutePaths));
+            xresource_editor::ole_drag::RunFileDragOut(hWnd, std::move(AbsolutePaths));
         }
 
         // DestLibrary/DestFolderRelToAssets describe the drop TARGET (a tree/table folder row, or the
@@ -1116,7 +1116,7 @@ namespace e10
                     wcsncpy_s(Payload.m_SourcePath, RelPath.wstring().c_str(), _TRUNCATE);
                     Payload.m_bWholeSelection = false;
 
-                    ImGui::SetDragDropPayload("E10_ASSET_FILE_DRAG", &Payload, sizeof(Payload));
+                    ImGui::SetDragDropPayload("XRESOURCE_EDITOR_ASSET_FILE_DRAG", &Payload, sizeof(Payload));
                     ImGui::TextUnformatted(Label.c_str());
                     ImGui::EndDragDropSource();
 
@@ -1142,7 +1142,7 @@ namespace e10
                 // it there, regardless of which folder is currently open on the right.
                 if (ImGui::BeginDragDropTarget())
                 {
-                    if (const ImGuiPayload* Pl = ImGui::AcceptDragDropPayload("E10_ASSET_FILE_DRAG"))
+                    if (const ImGuiPayload* Pl = ImGui::AcceptDragDropPayload("XRESOURCE_EDITOR_ASSET_FILE_DRAG"))
                     {
                         IM_ASSERT(Pl->DataSize == sizeof(file_drag_payload));
                         HandleFileDrop(*static_cast<const file_drag_payload*>(Pl->Data), LibraryGuid, RelPath);
@@ -1238,9 +1238,9 @@ namespace e10
                             if (Dropped.m_LibraryGuid != LibraryGuid)
                             {
                                 bool bAlready = false;
-                                m_AssetMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<e10::library_db>& DB)
+                                m_AssetMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
                                 {
-                                    bAlready = std::find_if(DB->m_Library.m_ParentLibraries.begin(), DB->m_Library.m_ParentLibraries.end(), [&](const e10::library& Dep) { return Dep.m_GUID == Dropped.m_LibraryGuid; }) != DB->m_Library.m_ParentLibraries.end();
+                                    bAlready = std::find_if(DB->m_Library.m_ParentLibraries.begin(), DB->m_Library.m_ParentLibraries.end(), [&](const xresource_editor::library& Dep) { return Dep.m_GUID == Dropped.m_LibraryGuid; }) != DB->m_Library.m_ParentLibraries.end();
                                 });
                                 if (!bAlready && m_Browser.m_OnAddLibraryDependency)
                                     m_Browser.m_OnAddLibraryDependency(LibraryGuid, Dropped.m_LibraryGuid, Dropped.m_Path);
@@ -1251,12 +1251,12 @@ namespace e10
 
                     if (bDepOpen)
                     {
-                        std::vector<e10::library> Deps;
-                        m_AssetMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<e10::library_db>& DB)
+                        std::vector<xresource_editor::library> Deps;
+                        m_AssetMgr.m_mLibraryDB.FindAsReadOnly(LibraryGuid, [&](const std::unique_ptr<xresource_editor::library_db>& DB)
                         {
                             for (auto& Dep : DB->m_Library.m_ParentLibraries)
                             {
-                                e10::library Stub;
+                                xresource_editor::library Stub;
                                 Stub.m_GUID = Dep.m_GUID;
                                 Stub.m_Path = Dep.m_Path;
                                 Deps.push_back(std::move(Stub));
@@ -1323,7 +1323,7 @@ namespace e10
 
         //=============================================================================
         // Styled breadcrumb bar - deliberately as close as reasonably possible to virtual_tree_tab's
-        // own RenderPath() (E10_asset_browser_virtual_tree_tab.h): same background-bar-drawn-behind-
+        // own RenderPath() (xresource_editor_asset_browser_virtual_tree_tab.h): same background-bar-drawn-behind-
         // transparent-buttons technique, same bold-last-segment treatment, same per-segment ">" button
         // opening a popup of that level's OTHER children (siblings) for a sideways jump, same
         // fill-remaining-width trailer. Adapted from descriptor-tree path_node children to real
@@ -1337,7 +1337,7 @@ namespace e10
             const float line_height = ImGui::GetTextLineHeightWithSpacing();
             const ImU32 button_bg_color_u32 = ImGui::ColorConvertFloat4ToU32(ImVec4(0.145f, 0.145f, 0.145f, 0.80f));
 
-            // Captured for the shared history popup (assert_browser::RenderPathHistoryPopup) - same
+            // Captured for the shared history popup (asset_browser::RenderPathHistoryPopup) - same
             // capture point virtual_tree_tab's own RenderPath() uses, before GetContentRegionAvail() is
             // consumed by anything below.
             m_PathHistoryPos  = start_pos;
@@ -1436,7 +1436,7 @@ namespace e10
         // now visually identical to virtual_tree_tab's own RenderNavigationPath() (direct user
         // correction: "The History button should be the same (arrow down) as the virtual... The left
         // right Icon should be the same as the Virtual Tree... keep things consistent"). Shares
-        // assert_browser::ScaleButton and assert_browser::RenderPathHistoryPopup (E10_AssetBrowser.h)
+        // asset_browser::ScaleButton and asset_browser::RenderPathHistoryPopup (xresource_editor_asset_browser.h)
         // outright rather than reimplementing lookalikes - "if this means we can refactor code... the
         // less code the better," direct user follow-up. The back/forward icon codepoints were never
         // actually proven broken in this build (only the FOLDER codepoints were, see DrawFolderIconAt's
@@ -1457,7 +1457,7 @@ namespace e10
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0, 0, 1));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0, 0, 1));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0, 0, 1));
-                if (assert_browser::ScaleButton("\xEE\x9C\xB8", 1.2f)) ImGui::OpenPopup("Empty Asset Trash");
+                if (asset_browser::ScaleButton("\xEE\x9C\xB8", 1.2f)) ImGui::OpenPopup("Empty Asset Trash");
                 ImGui::PopStyleColor(3);
 
                 if (ImGui::BeginPopup("Empty Asset Trash"))
@@ -1488,10 +1488,10 @@ namespace e10
             if (m_PathHistoryIndex == 0)
             {
                 ImGui::BeginDisabled();
-                assert_browser::ScaleButton("\xEE\x9C\xAB", 1.0f);
+                asset_browser::ScaleButton("\xEE\x9C\xAB", 1.0f);
                 ImGui::EndDisabled();
             }
-            else if (assert_browser::ScaleButton("\xEE\x9C\xAB", 1.0f))
+            else if (asset_browser::ScaleButton("\xEE\x9C\xAB", 1.0f))
             {
                 m_PathHistoryIndex--;
                 UpdateHistoryLRU();
@@ -1502,10 +1502,10 @@ namespace e10
             if ((m_PathHistoryIndex + 1) >= m_PathHistoryList.size())
             {
                 ImGui::BeginDisabled();
-                assert_browser::ScaleButton("\xEE\x9C\xAA", 1.0f);
+                asset_browser::ScaleButton("\xEE\x9C\xAA", 1.0f);
                 ImGui::EndDisabled();
             }
-            else if (assert_browser::ScaleButton("\xEE\x9C\xAA", 1.0f))
+            else if (asset_browser::ScaleButton("\xEE\x9C\xAA", 1.0f))
             {
                 m_PathHistoryIndex++;
                 UpdateHistoryLRU();
@@ -1513,13 +1513,13 @@ namespace e10
 
             ImGui::SameLine(0, 6.0f);
 
-            if (assert_browser::ScaleButton("\xee\xa5\xb2", 0.9f)) m_PathHistoryShow = true;
+            if (asset_browser::ScaleButton("\xee\xa5\xb2", 0.9f)) m_PathHistoryShow = true;
             ImGui::PopStyleColor();
             ImGui::SameLine(0, 4.0f);
 
             RenderPath();   // captures m_PathHistoryPos/m_PathHistorySize for the popup below
 
-            assert_browser::RenderPathHistoryPopup(m_PathHistoryShow, m_PathHistoryPos, m_PathHistorySize,
+            asset_browser::RenderPathHistoryPopup(m_PathHistoryShow, m_PathHistoryPos, m_PathHistorySize,
                 m_PathHistoryListRU, m_PathHistoryList, m_PathHistoryIndex,
                 [this](const path_history_entry& E) { return BuildPathString(E); },
                 [this](const path_history_entry& E) { PathHistoryUpdate(E.m_gLibrary, E.m_Folder, E.m_bTrash); },
@@ -1655,7 +1655,7 @@ namespace e10
                         const ImVec2 CellMin = ImGui::GetItemRectMin();
                         const ImVec2 CellMax = ImGui::GetItemRectMax();
                         const ImVec2 Center{ (CellMin.x + CellMax.x) * 0.5f, (CellMin.y + CellMax.y) * 0.5f };
-                        e10::DrawPadlockShape(ImGui::GetWindowDrawList(), Center, 11.0f, IM_COL32(180, 180, 185, 255)); // neutral grey - just a generic "source control" marker
+                        xresource_editor::DrawPadlockShape(ImGui::GetWindowDrawList(), Center, 11.0f, IM_COL32(180, 180, 185, 255)); // neutral grey - just a generic "source control" marker
                         if (ImGui::IsItemHovered())
                         {
                             ImGui::BeginTooltip();
@@ -1760,19 +1760,19 @@ namespace e10
                         // buttons' own tooltip formatting (E29_LevelScene_Editor.cpp: a plain Text
                         // title line + a TextDisabled description line, direct user reference).
                         ImGui::TableSetColumnIndex(0);
-                        if (E.m_StatusBadge != e10::asset_status_badge::None || E.m_LockBadge != e10::asset_lock_badge::None)
+                        if (E.m_StatusBadge != xresource_editor::asset_status_badge::None || E.m_LockBadge != xresource_editor::asset_lock_badge::None)
                         {
                             const ImVec2 CellMin = ImGui::GetCursorScreenPos();
                             const float  RowH    = ImGui::GetTextLineHeight();
                             constexpr float BadgeSize = 11.0f; // matches the header icon's own size
-                            e10::DrawSourceControlBadge(ImGui::GetWindowDrawList(),
+                            xresource_editor::DrawSourceControlBadge(ImGui::GetWindowDrawList(),
                                 { CellMin.x + BadgeSize * 0.5f, CellMin.y + RowH * 0.5f }, BadgeSize, E.m_StatusBadge, E.m_LockBadge);
 
                             ImGui::InvisibleButton("##SCHover", ImVec2(ImGui::GetContentRegionAvail().x, RowH));
                             if (ImGui::IsItemHovered())
                             {
                                 const char* Title; const char* Desc;
-                                e10::GetSourceControlTooltipText(E.m_StatusBadge, E.m_LockBadge, Title, Desc);
+                                xresource_editor::GetSourceControlTooltipText(E.m_StatusBadge, E.m_LockBadge, Title, Desc);
                                 if (Title)
                                 {
                                     ImGui::BeginTooltip();
@@ -1883,7 +1883,7 @@ namespace e10
                                         // (a long dependent list hovered near the right edge otherwise
                                         // gets cut off past the viewport). Same fix applied to the
                                         // resource tooltip in virtual_tree_tab.h.
-                                        e10::PlaceTooltipAwayFromEdges();
+                                        xresource_editor::PlaceTooltipAwayFromEdges();
                                         ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
                                         ImGui::BeginTooltip();
                                         ImGui::Text("Used by %zu resource%s:", Total, Total == 1 ? "" : "s");
@@ -1925,7 +1925,7 @@ namespace e10
                                 wcsncpy_s(Payload.m_SourcePath, (m_SelectedFolder / E.m_Name).wstring().c_str(), _TRUNCATE);
                                 Payload.m_bWholeSelection = bMultiSelected && m_MultiSelected.size() > 1;
 
-                                ImGui::SetDragDropPayload("E10_ASSET_FILE_DRAG", &Payload, sizeof(Payload));
+                                ImGui::SetDragDropPayload("XRESOURCE_EDITOR_ASSET_FILE_DRAG", &Payload, sizeof(Payload));
                                 ImGui::TextUnformatted(Payload.m_bWholeSelection ? std::format("{} items", m_MultiSelected.size()).c_str() : Name.c_str());
                                 ImGui::EndDragDropSource();
 
@@ -1938,7 +1938,7 @@ namespace e10
                             // row makes no sense - nothing here treats a file as a container).
                             if (!m_bBrowsingTrash && E.m_bDirectory && ImGui::BeginDragDropTarget())
                             {
-                                if (const ImGuiPayload* Pl = ImGui::AcceptDragDropPayload("E10_ASSET_FILE_DRAG"))
+                                if (const ImGuiPayload* Pl = ImGui::AcceptDragDropPayload("XRESOURCE_EDITOR_ASSET_FILE_DRAG"))
                                 {
                                     IM_ASSERT(Pl->DataSize == sizeof(file_drag_payload));
                                     HandleFileDrop(*static_cast<const file_drag_payload*>(Pl->Data), Library->m_Library.m_GUID, m_SelectedFolder / E.m_Name);
@@ -2072,11 +2072,11 @@ namespace e10
                         if (!E.m_bDirectory) ImGui::Text("%llu", static_cast<unsigned long long>(E.m_Size));
 
                         // Date Modified - direct user request, "like explorer". Reuses this codebase's
-                        // own existing ConvertToStdTime helper (E10_AssetMgr.h) for consistency with
+                        // own existing ConvertToStdTime helper (xresource_editor_asset_mgr.h) for consistency with
                         // the Virtual Tree's own descriptor-timestamp display, just a shorter format
                         // (no seconds/timezone) matching Explorer's own compact column.
                         ImGui::TableSetColumnIndex(3);
-                        ImGui::Text("%s", std::format("{:%m/%d/%Y %I:%M %p}", e10::ConvertToStdTime(E.m_LastWriteTime)).c_str());
+                        ImGui::Text("%s", std::format("{:%m/%d/%Y %I:%M %p}", xresource_editor::ConvertToStdTime(E.m_LastWriteTime)).c_str());
                         ImGui::PopID();
                     }
 
@@ -2122,7 +2122,7 @@ namespace e10
                     // mode, matching every other mutation gesture above.
                     if (!m_bBrowsingTrash && ImGui::BeginDragDropTargetCustom(ImGui::GetCurrentWindow()->ContentRegionRect, ImGui::GetID("FilesBackgroundDropTarget")))
                     {
-                        if (const ImGuiPayload* Pl = ImGui::AcceptDragDropPayload("E10_ASSET_FILE_DRAG"))
+                        if (const ImGuiPayload* Pl = ImGui::AcceptDragDropPayload("XRESOURCE_EDITOR_ASSET_FILE_DRAG"))
                         {
                             IM_ASSERT(Pl->DataSize == sizeof(file_drag_payload));
                             HandleFileDrop(*static_cast<const file_drag_payload*>(Pl->Data), Library->m_Library.m_GUID, m_SelectedFolder);
@@ -2137,7 +2137,7 @@ namespace e10
             if (!bFoundLibrary) ImGui::TextDisabled("Library not found.");
         }
 
-        e10::library_mgr&                     m_AssetMgr;
+        xresource_editor::library_mgr&                     m_AssetMgr;
         library::guid                         m_SelectedLibrary = {};
         std::filesystem::path                 m_SelectedFolder  = {};
         std::wstring                          m_SelectedFile    = {};
@@ -2153,7 +2153,7 @@ namespace e10
         std::optional<std::filesystem::path>  m_ExpandToFolder    = {};
 
         // Position/size of the breadcrumb bar (captured in RenderPath()) + open flag for the shared
-        // assert_browser::RenderPathHistoryPopup (E10_AssetBrowser.h) - same fields virtual_tree_tab
+        // asset_browser::RenderPathHistoryPopup (xresource_editor_asset_browser.h) - same fields virtual_tree_tab
         // keeps for the identical purpose.
         ImVec2                                m_PathHistoryPos    = {};
         ImVec2                                m_PathHistorySize   = {};

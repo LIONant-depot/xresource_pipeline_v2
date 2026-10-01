@@ -1,5 +1,5 @@
-#include "E10_AssetBrowser.h"
-#include "E10_AssetMgr.h"
+#include "xresource_editor_asset_browser.h"
+#include "xresource_editor_asset_mgr.h"
 
 #include "imgui.h"
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
@@ -10,20 +10,20 @@
     #include "imgui_internal.h"       // For TreeNodeBehavior, GetIDWithSeed, etc.
 #endif
 
-namespace e10
+namespace xresource_editor
 {
-    struct virtual_tree_tab : e10::asset_browser_tab_base
+    struct virtual_tree_tab : xresource_editor::asset_browser_tab_base
     {
-        e10::library_mgr& m_AssetMgr;
+        xresource_editor::library_mgr& m_AssetMgr;
 
         //=============================================================================
 
-        virtual_tree_tab(assert_browser& Browser, const char* pName)
+        virtual_tree_tab(asset_browser& Browser, const char* pName)
             : asset_browser_tab_base{ Browser, pName }
             , m_AssetMgr{ *Browser.getAssetMgr() }
         {
-            m_AssetMgr.m_OnOpenProjectEvent.Register<&e10::virtual_tree_tab::OnOpenNewProject>(*this);
-            m_AssetMgr.m_OnCloseProjectEvent.Register<&e10::virtual_tree_tab::OnCloseProject>(*this);
+            m_AssetMgr.m_OnOpenProjectEvent.Register<&xresource_editor::virtual_tree_tab::OnOpenNewProject>(*this);
+            m_AssetMgr.m_OnCloseProjectEvent.Register<&xresource_editor::virtual_tree_tab::OnCloseProject>(*this);
 
             if (m_AssetMgr.m_ProjectGUID.isValid())
             {
@@ -52,17 +52,17 @@ namespace e10
 
         //=============================================================================
 
-        // Moved to e10::drag_and_drop_folder_payload_t (E10_AssetBrowser.h) so external code (e.g. a
+        // Moved to xresource_editor::drag_and_drop_folder_payload_t (xresource_editor_asset_browser.h) so external code (e.g. a
         // scene tree accepting a dropped Prefab asset) can decode this payload shape without
         // including this tab's own header. Aliased here so every existing unqualified use in this
         // file keeps compiling unchanged.
-        using drag_and_drop_folder_payload_t = e10::drag_and_drop_folder_payload_t;
+        using drag_and_drop_folder_payload_t = xresource_editor::drag_and_drop_folder_payload_t;
 
         //=============================================================================
 
         struct path_node
         {
-            e10::folder::guid           m_Guid;
+            xresource_editor::folder::guid           m_Guid;
             std::string                 m_Name;
             std::vector<path_node>      m_Children;
         };
@@ -77,7 +77,7 @@ namespace e10
 
         //=============================================================================
 
-        void OnOpenNewProject( e10::library_mgr&)
+        void OnOpenNewProject( xresource_editor::library_mgr&)
         {
             // Have the default library open from the start
             m_IsTreeNodeOpen[ {m_AssetMgr.m_ProjectGUID.m_Instance} ] = true;
@@ -85,7 +85,7 @@ namespace e10
 
         //=============================================================================
 
-        void OnCloseProject(e10::library_mgr&)
+        void OnCloseProject(xresource_editor::library_mgr&)
         {
         }
 
@@ -104,10 +104,10 @@ namespace e10
         static int WrappedButton2(xresource::instance_guid G, const char* label, const ImVec2& size, ImU32 Color, const char* pIcon, bool& held, bool bModified = false
                                  , char* pRenameBuf = nullptr, size_t RenameBufSize = 0, bool bRenameJustActivated = false
                                  , bool* pOutRenameCommit = nullptr, bool* pOutRenameCancel = nullptr
-                                 , e10::plugin_icon_ref AtlasIcon = {}
-                                 , e10::asset_status_badge StatusBadge = e10::asset_status_badge::None
-                                 , e10::asset_lock_badge LockBadge = e10::asset_lock_badge::None
-                                 , e10::plugin_icon_ref LabelTypeIcon = {} )
+                                 , xresource_editor::plugin_icon_ref AtlasIcon = {}
+                                 , xresource_editor::asset_status_badge StatusBadge = xresource_editor::asset_status_badge::None
+                                 , xresource_editor::asset_lock_badge LockBadge = xresource_editor::asset_lock_badge::None
+                                 , xresource_editor::plugin_icon_ref LabelTypeIcon = {} )
         {
             ImGuiContext& g = *ImGui::GetCurrentContext();
             ImGuiWindow* window = ImGui::GetCurrentWindow();
@@ -261,10 +261,10 @@ namespace e10
             // status story, so its own color carries that instead of needing a second spot (gold
             // lock = yours + modified, green lock = yours + clean, red lock = someone else's,
             // regardless of your own local state). Shape/color logic lives in the shared
-            // e10::DrawSourceControlBadge (E10_AssetBrowser.h) - files_tab's own table-row badge
+            // xresource_editor::DrawSourceControlBadge (xresource_editor_asset_browser.h) - files_tab's own table-row badge
             // reuses the exact same function; see that file's own comment for the full history
             // (unverified codepoint, VS palette, inverted polarity).
-            e10::DrawSourceControlBadge(ImGui::GetWindowDrawList(), { pos.x + padding.x + BadgeSize * 0.5f, IconCenterY }, BadgeSize, StatusBadge, LockBadge);
+            xresource_editor::DrawSourceControlBadge(ImGui::GetWindowDrawList(), { pos.x + padding.x + BadgeSize * 0.5f, IconCenterY }, BadgeSize, StatusBadge, LockBadge);
 
             ImGui::SetCursorPosY(text_start_y);
 
@@ -439,13 +439,13 @@ namespace e10
                 //
                 // Create the Full Path 
                 //
-                m_AssetMgr.m_mLibraryDB.FindAsReadOnly(E.m_gLibrary, [&](const std::unique_ptr<e10::library_db>& Lib)
+                m_AssetMgr.m_mLibraryDB.FindAsReadOnly(E.m_gLibrary, [&](const std::unique_ptr<xresource_editor::library_db>& Lib)
                 {
                     Lib->m_InfoByTypeDataBase.FindAsReadOnly(E.m_gFolder.m_Type, [&](const std::unique_ptr<library_db::info_db>& Entry)
                     {
                         std::function<void(xresource::instance_guid )> GetFolderName = [&]( xresource::instance_guid Guid ) -> void
                         {
-                            Entry->m_InfoDataBase.FindAsReadOnly(Guid, [&](const e10::library_db::info_node& InfoEntry)
+                            Entry->m_InfoDataBase.FindAsReadOnly(Guid, [&](const xresource_editor::library_db::info_node& InfoEntry)
                             {
                                 path_node& PathNode = PathNodeList.emplace_back();
                                 PathNode.m_Guid.m_Instance = InfoEntry.m_Info.m_Guid.m_Instance;
@@ -455,7 +455,7 @@ namespace e10
 
                                 for (auto& C : InfoEntry.m_lChildLinks)
                                 {
-                                    if (C.m_Type == e10::folder::type_guid_v)
+                                    if (C.m_Type == xresource_editor::folder::type_guid_v)
                                     {
                                         if (C.m_Instance.m_Value == (E.m_gLibrary.m_Instance.m_Value + 2))
                                             continue;
@@ -464,7 +464,7 @@ namespace e10
                                         Child.m_Guid.m_Instance = C.m_Instance;
 
                                         // Get the name of the child
-                                        bool bFound = Entry->m_InfoDataBase.FindAsReadOnly(Child.m_Guid.m_Instance, [&](const e10::library_db::info_node& InfoEntry)
+                                        bool bFound = Entry->m_InfoDataBase.FindAsReadOnly(Child.m_Guid.m_Instance, [&](const xresource_editor::library_db::info_node& InfoEntry)
                                         {
                                             Child.m_Name = InfoEntry.m_Info.m_Name;
                                         });
@@ -486,10 +486,10 @@ namespace e10
                                 //
                                 for ( auto& C : InfoEntry.m_Info.m_RscLinks)
                                 {
-                                    if (C.m_Type == e10::folder::type_guid_v)
+                                    if (C.m_Type == xresource_editor::folder::type_guid_v)
                                     {
                                         // If this entry is in the trash then skip it!
-                                        if (C.m_Instance.m_Value == (e10::folder::trash_guid_v.m_Instance.m_Value))
+                                        if (C.m_Instance.m_Value == (xresource_editor::folder::trash_guid_v.m_Instance.m_Value))
                                            break;
 
                                         GetFolderName(C.m_Instance);
@@ -595,30 +595,30 @@ namespace e10
         }
 
         //=============================================================================
-        // ScaleButton moved to assert_browser::ScaleButton (E10_AssetBrowser.h) - files_tab's own
+        // ScaleButton moved to asset_browser::ScaleButton (xresource_editor_asset_browser.h) - files_tab's own
         // Asset Tree needed the identical helper, so this is now the ONE shared copy rather than two
         // (direct user request: "the less code the better"). Every call site below updated to the
         // qualified name.
 
-        void OpenLeftTreeTo( e10::library::guid gLibrary, e10::folder::guid gFolder )
+        void OpenLeftTreeTo( xresource_editor::library::guid gLibrary, xresource_editor::folder::guid gFolder )
         {
             //
             // Make sure that this path is open in the left tree
             //
-            m_AssetMgr.m_mLibraryDB.FindAsReadOnly(gLibrary, [&](const std::unique_ptr<e10::library_db>& Lib)
+            m_AssetMgr.m_mLibraryDB.FindAsReadOnly(gLibrary, [&](const std::unique_ptr<xresource_editor::library_db>& Lib)
             {
-                Lib->m_InfoByTypeDataBase.FindAsReadOnly(e10::folder::type_guid_v, [&](const std::unique_ptr<library_db::info_db>& Entry)
+                Lib->m_InfoByTypeDataBase.FindAsReadOnly(xresource_editor::folder::type_guid_v, [&](const std::unique_ptr<library_db::info_db>& Entry)
                 {
                     std::function<void(xresource::instance_guid)> Open = [&](xresource::instance_guid Guid) -> void
                     {
-                        Entry->m_InfoDataBase.FindAsReadOnly(Guid, [&](const e10::library_db::info_node& InfoEntry)
+                        Entry->m_InfoDataBase.FindAsReadOnly(Guid, [&](const xresource_editor::library_db::info_node& InfoEntry)
                         {
                             m_IsTreeNodeOpen[{InfoEntry.m_Info.m_Guid.m_Instance}] = true;
                             for ( auto& E : InfoEntry.m_Info.m_RscLinks)
                             {
-                                if ( E != e10::folder::trash_guid_v)
+                                if ( E != xresource_editor::folder::trash_guid_v)
                                 {
-                                    if ( E.m_Type == e10::folder::type_guid_v)
+                                    if ( E.m_Type == xresource_editor::folder::type_guid_v)
                                     {
                                         Open(E.m_Instance);
                                         return;
@@ -659,7 +659,7 @@ namespace e10
             // Actually apply the current history entry's selection - moved here (rather than left ONLY
             // in PathHistoryUpdate, which used to be the sole caller) now that Back/Forward mutate
             // m_PathHistoryIndex and call UpdateHistoryLRU() directly (RenderNavigationPath(), via the
-            // shared assert_browser::RenderPathHistoryPopup's OnPickStack callback too) - matches
+            // shared asset_browser::RenderPathHistoryPopup's OnPickStack callback too) - matches
             // files_tab's own UpdateHistoryLRU, which already had this responsibility. Without this,
             // Back/Forward moved the index but never updated what was actually selected/shown.
             m_SelectedLibrary = m_PathHistoryList[m_PathHistoryIndex].m_gLibrary;
@@ -672,7 +672,7 @@ namespace e10
 
         //=============================================================================
 
-        void PathHistoryUpdate( library::guid gLibrary, e10::folder::guid gFolder )
+        void PathHistoryUpdate( library::guid gLibrary, xresource_editor::folder::guid gFolder )
         {
             if (m_PathHistoryList.empty() ) 
             {
@@ -708,20 +708,20 @@ namespace e10
 
         //=============================================================================
 
-        std::string BuildPathString( e10::library::guid gLibrary, e10::folder::guid gFolder )
+        std::string BuildPathString( xresource_editor::library::guid gLibrary, xresource_editor::folder::guid gFolder )
         {
             std::string FolderName;
 
             //
             // Create the Full Path 
             //
-            m_AssetMgr.m_mLibraryDB.FindAsReadOnly(gLibrary, [&](const std::unique_ptr<e10::library_db>& Lib)
+            m_AssetMgr.m_mLibraryDB.FindAsReadOnly(gLibrary, [&](const std::unique_ptr<xresource_editor::library_db>& Lib)
             {
                 Lib->m_InfoByTypeDataBase.FindAsReadOnly(gFolder.m_Type, [&](const std::unique_ptr<library_db::info_db>& Entry)
                 {
                     std::function<void(xresource::instance_guid)> GetFolderName = [&]( xresource::instance_guid Guid ) -> void
                     {
-                        Entry->m_InfoDataBase.FindAsReadOnly(Guid, [&](const e10::library_db::info_node& InfoEntry)
+                        Entry->m_InfoDataBase.FindAsReadOnly(Guid, [&](const xresource_editor::library_db::info_node& InfoEntry)
                         {
                             if (FolderName.empty()) FolderName = InfoEntry.m_Info.m_Name.empty() ? "<unnamed>" : InfoEntry.m_Info.m_Name;
                             else                    FolderName = std::format( "{}\\{}", InfoEntry.m_Info.m_Name.empty()?"<unnamed>": InfoEntry.m_Info.m_Name, FolderName);
@@ -731,10 +731,10 @@ namespace e10
                             //
                             for ( auto& C : InfoEntry.m_Info.m_RscLinks)
                             {
-                                if (C.m_Type == e10::folder::type_guid_v)
+                                if (C.m_Type == xresource_editor::folder::type_guid_v)
                                 {
                                     // If this entry is in the trash then skip it!
-                                    if (C.m_Instance.m_Value == e10::folder::trash_guid_v.m_Instance.m_Value)
+                                    if (C.m_Instance.m_Value == xresource_editor::folder::trash_guid_v.m_Instance.m_Value)
                                        break;
 
                                     GetFolderName(C.m_Instance);
@@ -753,8 +753,8 @@ namespace e10
 
         //=============================================================================
 
-        // Now shares assert_browser::ScaleButton and assert_browser::RenderPathHistoryPopup
-        // (E10_AssetBrowser.h) with files_tab's own Asset Tree instead of each keeping its own
+        // Now shares asset_browser::ScaleButton and asset_browser::RenderPathHistoryPopup
+        // (xresource_editor_asset_browser.h) with files_tab's own Asset Tree instead of each keeping its own
         // hand-rolled copy - the Asset Tree needed this exact widget for consistency, and factoring it
         // out to the one shared place both tabs already include meant this file's own ~90-line inline
         // popup block could be deleted rather than duplicated ("the less code the better").
@@ -764,10 +764,10 @@ namespace e10
             if (m_PathHistoryIndex==0)
             {
                 ImGui::BeginDisabled();
-                assert_browser::ScaleButton("\xEE\x9C\xAB", 1.0f);
+                asset_browser::ScaleButton("\xEE\x9C\xAB", 1.0f);
                 ImGui::EndDisabled();
             }
-            else if (assert_browser::ScaleButton("\xEE\x9C\xAB", 1.0f))
+            else if (asset_browser::ScaleButton("\xEE\x9C\xAB", 1.0f))
             {
                 m_PathHistoryIndex--;
                 UpdateHistoryLRU();
@@ -777,22 +777,22 @@ namespace e10
             if ((m_PathHistoryIndex+1) >= m_PathHistoryList.size())
             {
                 ImGui::BeginDisabled();
-                assert_browser::ScaleButton("\xEE\x9C\xAA", 1.0f);
+                asset_browser::ScaleButton("\xEE\x9C\xAA", 1.0f);
                 ImGui::EndDisabled();
             }
-            else if (assert_browser::ScaleButton("\xEE\x9C\xAA", 1.0f))
+            else if (asset_browser::ScaleButton("\xEE\x9C\xAA", 1.0f))
             {
                 m_PathHistoryIndex  = static_cast<std::uint32_t>(m_PathHistoryIndex + 1ull);
                 UpdateHistoryLRU();
             }
 
             ImGui::SameLine(0, 0.8f);
-            if (assert_browser::ScaleButton("\xee\xa5\xb2", 0.8f)) m_PathHistoryShow = true;
+            if (asset_browser::ScaleButton("\xee\xa5\xb2", 0.8f)) m_PathHistoryShow = true;
             ImGui::SameLine(0, 1.0f);
 
             RenderPath();   // captures m_PathHistoryPos/m_PathHistorySize for the popup below
 
-            assert_browser::RenderPathHistoryPopup(m_PathHistoryShow, m_PathHistoryPos, m_PathHistorySize,
+            asset_browser::RenderPathHistoryPopup(m_PathHistoryShow, m_PathHistoryPos, m_PathHistorySize,
                 m_PathHistoryListRU, m_PathHistoryList, m_PathHistoryIndex,
                 [this](const path_history_entry& E) { return BuildPathString(E.m_gLibrary, E.m_gFolder); },
                 [this](const path_history_entry& E) { PathHistoryUpdate(E.m_gLibrary, E.m_gFolder); },
@@ -806,7 +806,7 @@ namespace e10
             for (auto& E : m_AssetMgr.m_AssetPluginsDB.m_lPlugins)
             {
                 // Show the resource type icon to the left of the resource name
-                e10::plugin_icon_ref IconRef = m_AssetMgr.m_AssetPluginsDB.getIconRef(E.m_TypeGUID, 0);
+                xresource_editor::plugin_icon_ref IconRef = m_AssetMgr.m_AssetPluginsDB.getIconRef(E.m_TypeGUID, 0);
                 
                 ImGui::PushID(E.m_TypeName.c_str());
                 
@@ -844,12 +844,12 @@ namespace e10
 
         void AddResourceButton()
         {
-            if ( m_ParentGUID == e10::folder::trash_guid_v )
+            if ( m_ParentGUID == xresource_editor::folder::trash_guid_v )
             {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0, 0, 1));        
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0, 0, 1));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0, 0, 1));
-                if (assert_browser::ScaleButton("\xEE\x9C\xB8", 1.2f))
+                if (asset_browser::ScaleButton("\xEE\x9C\xB8", 1.2f))
                 {
                     ImGui::OpenPopup("Delete All Resources");
                 }
@@ -876,14 +876,14 @@ namespace e10
                 bool bIsDeleted = false;
                 m_AssetMgr.getInfo( m_SelectedLibrary, m_ParentGUID, [&](xresource_pipeline::info& Info)
                 {
-                    if (Info.m_RscLinks.empty() == false && Info.m_RscLinks[0] == e10::folder::trash_guid_v )
+                    if (Info.m_RscLinks.empty() == false && Info.m_RscLinks[0] == xresource_editor::folder::trash_guid_v )
                     {
                         bIsDeleted = true;
                     }
                 });
                 if (bIsDeleted) return;
 
-                if (assert_browser::ScaleButton("\xee\xa5\x88", 1.2f))
+                if (asset_browser::ScaleButton("\xee\xa5\x88", 1.2f))
                 {
                     ImGui::OpenPopup("Add Resource");
                 }
@@ -902,7 +902,7 @@ namespace e10
         {
             static bool keepPopupOpen = false;
             static ImVec2 popupPos = ImVec2(0, 0);
-            if (assert_browser::ScaleButton("\xEE\x9E\xB3\xee\xa5\xb2", 0.9f))   // 
+            if (asset_browser::ScaleButton("\xEE\x9E\xB3\xee\xa5\xb2", 0.9f))   // 
             {
                 keepPopupOpen = true;
                 popupPos = ImVec2(ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().y);
@@ -1043,7 +1043,7 @@ namespace e10
         {
             struct folder
             {
-                e10::folder::guid           m_Guid;
+                xresource_editor::folder::guid           m_Guid;
                 std::string_view            m_Name;
                 std::vector<folder>         m_Children;
                 int                         m_nDeletedItems;
@@ -1074,21 +1074,21 @@ namespace e10
                 //
                 folder RootFolder;
                 {
-                    const bool bFoundType = L.second->m_InfoByTypeDataBase.FindAsReadOnly(e10::folder::type_guid_v, [&](const std::unique_ptr<e10::library_db::info_db>& Entry)
+                    const bool bFoundType = L.second->m_InfoByTypeDataBase.FindAsReadOnly(xresource_editor::folder::type_guid_v, [&](const std::unique_ptr<xresource_editor::library_db::info_db>& Entry)
                     {
-                        std::function<void(const e10::folder::guid&, const e10::folder::guid&, folder&)> CollectFolders = [&](const e10::folder::guid& GUID, const e10::folder::guid& ParentGUID, folder& Folder )
+                        std::function<void(const xresource_editor::folder::guid&, const xresource_editor::folder::guid&, folder&)> CollectFolders = [&](const xresource_editor::folder::guid& GUID, const xresource_editor::folder::guid& ParentGUID, folder& Folder )
                         {
-                            const bool bFoundInstance = Entry->m_InfoDataBase.FindAsReadOnly(GUID.m_Instance, [&](const e10::library_db::info_node& InfoEntry)
+                            const bool bFoundInstance = Entry->m_InfoDataBase.FindAsReadOnly(GUID.m_Instance, [&](const xresource_editor::library_db::info_node& InfoEntry)
                             {
                                 Folder.m_Guid.m_Instance    = GUID.m_Instance;
                                 Folder.m_Name               = InfoEntry.m_Info.m_Name.empty() ? "<unnamed>" : InfoEntry.m_Info.m_Name.c_str();
                                 Folder.m_isRoot             = GUID.m_Instance == L.first.m_Instance;
-                                Folder.m_isTrash            = GUID.m_Instance.m_Value == (e10::folder::trash_guid_v.m_Instance.m_Value);
+                                Folder.m_isTrash            = GUID.m_Instance.m_Value == (xresource_editor::folder::trash_guid_v.m_Instance.m_Value);
                                 Folder.m_isOpen             = m_IsTreeNodeOpen[GUID];
                                 Folder.m_isSelected         = m_ParentGUID == GUID;
                                 Folder.m_isEmpty            = InfoEntry.m_lChildLinks.empty();
                                 Folder.m_nDeletedItems      = static_cast<int>(Folder.m_isTrash ? InfoEntry.m_lChildLinks.size() : 0);
-                                Folder.m_isDeleted          = InfoEntry.m_Info.m_RscLinks.empty() == false && InfoEntry.m_Info.m_RscLinks[0] == e10::folder::trash_guid_v && Folder.m_isRoot == false;
+                                Folder.m_isDeleted          = InfoEntry.m_Info.m_RscLinks.empty() == false && InfoEntry.m_Info.m_RscLinks[0] == xresource_editor::folder::trash_guid_v && Folder.m_isRoot == false;
 
                                 //
                                 // See if we have the selected item
@@ -1113,7 +1113,7 @@ namespace e10
                                     for (auto& ChildGuid : InfoEntry.m_lChildLinks)
                                     {
                                         // We only care about folders here
-                                        if (ChildGuid.m_Type == e10::folder::type_guid_v)
+                                        if (ChildGuid.m_Type == xresource_editor::folder::type_guid_v)
                                         {
                                             CollectFolders({ChildGuid.m_Instance}, GUID, Folder.m_Children.emplace_back());
                                         }
@@ -1150,7 +1150,7 @@ namespace e10
                 //
                 // Process the folders
                 //
-                std::function<void(const folder&, const e10::folder::guid)> DisplayNodes = [&](const folder& Folder, const e10::folder::guid ParentGUID )
+                std::function<void(const folder&, const xresource_editor::folder::guid)> DisplayNodes = [&](const folder& Folder, const xresource_editor::folder::guid ParentGUID )
                 {
                     //
                     // We do not display deleted folders (for now)
@@ -1170,7 +1170,7 @@ namespace e10
                     // IconSet[InfoEntry.m_lChildLinks.size() >= 1 ? 1 : 0][IsInTheoryOpen]
                     
 
-                    const char* pCon            = Folder.m_isTrash ? "\xEE\x9D\x8D" : Folder.m_isRoot ? (L.first.m_Type == e10::project::type_guid_v? "\xEE\xB0\xA6" : "\xEE\xA3\xB1") : Folder.m_isEmpty ? "\xEE\xA2\xB7" : "\xEE\xA3\x95";
+                    const char* pCon            = Folder.m_isTrash ? "\xEE\x9D\x8D" : Folder.m_isRoot ? (L.first.m_Type == xresource_editor::project::type_guid_v? "\xEE\xB0\xA6" : "\xEE\xA3\xB1") : Folder.m_isEmpty ? "\xEE\xA2\xB7" : "\xEE\xA3\x95";
                     const auto AdditionaFlags   = Folder.m_isEmpty ? (ImGuiTreeNodeFlags_Leaf ) : 0u;
                     // Root gets a "(Resources)" suffix - direct user correction, matching the Assets
                     // tab's own "{Library} (Assets)" root label convention (files_tab.h) so both trees
@@ -1184,7 +1184,7 @@ namespace e10
                     if (Folder.m_isSelected) ImGui::PopFont();
                     IsInTheoryOpen = bOpen;
 
-                    const auto FullGuid = e10::folder::guid{ Folder.m_Guid };
+                    const auto FullGuid = xresource_editor::folder::guid{ Folder.m_Guid };
 
                     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
                     {
@@ -1309,8 +1309,8 @@ namespace e10
                         }
 
                         // External creators (e.g. dragging a scene entity here to make a Prefab) -
-                        // see e10::external_drop_registration_base's own comment.
-                        for (auto pReg = e10::external_drop_registration_base::g_pHead; pReg; pReg = pReg->m_pNext)
+                        // see xresource_editor::external_drop_registration_base's own comment.
+                        for (auto pReg = xresource_editor::external_drop_registration_base::g_pHead; pReg; pReg = pReg->m_pNext)
                         {
                             if (const ImGuiPayload* ExtPayload = ImGui::AcceptDragDropPayload(pReg->m_pPayloadName))
                             {
@@ -1376,7 +1376,7 @@ namespace e10
                         ImGui::PopStyleColor(3);
 
                     }
-                    else if (FullGuid.m_Instance != m_AssetMgr.m_ProjectGUID.m_Instance && FullGuid != e10::folder::trash_guid_v)
+                    else if (FullGuid.m_Instance != m_AssetMgr.m_ProjectGUID.m_Instance && FullGuid != xresource_editor::folder::trash_guid_v)
                     {
                         // Detect double-click for renaming
                         if (ImGui::IsItemClicked(0) && ImGui::IsMouseDoubleClicked(0))
@@ -1416,7 +1416,7 @@ namespace e10
                                     if (Dropped.m_LibraryGuid != L.first)
                                     {
                                         auto& Existing = L.second->m_Library.m_ParentLibraries;
-                                        const bool bAlready = std::find_if(Existing.begin(), Existing.end(), [&](const e10::library& Dep) { return Dep.m_GUID == Dropped.m_LibraryGuid; }) != Existing.end();
+                                        const bool bAlready = std::find_if(Existing.begin(), Existing.end(), [&](const xresource_editor::library& Dep) { return Dep.m_GUID == Dropped.m_LibraryGuid; }) != Existing.end();
                                         if (!bAlready && m_Browser.m_OnAddLibraryDependency)
                                             m_Browser.m_OnAddLibraryDependency(L.first, Dropped.m_LibraryGuid, Dropped.m_Path);
                                     }
@@ -1588,8 +1588,8 @@ namespace e10
             {
                 std::string             m_ResourceName;
                 std::string_view        m_TypeNameView;
-                e10::plugin_icon_ref    m_Icon;
-                e10::plugin_icon_ref    m_Thumbnail;    // set for this frame only, right before drawing - see m_OnRequestThumbnail
+                xresource_editor::plugin_icon_ref    m_Icon;
+                xresource_editor::plugin_icon_ref    m_Thumbnail;    // set for this frame only, right before drawing - see m_OnRequestThumbnail
                 xresource::full_guid    m_ResourceGUID;
                 float                   m_Distance;
                 bool                    m_bHasChildren:1
@@ -1601,8 +1601,8 @@ namespace e10
                 // items belonging to the same group when rendering.
                 int                     m_VirtualDepth      = 0;
                 xresource::full_guid    m_VirtualGroupRoot  = {};
-                e10::asset_status_badge m_StatusBadge       = e10::asset_status_badge::None;
-                e10::asset_lock_badge   m_LockBadge         = e10::asset_lock_badge::None;
+                xresource_editor::asset_status_badge m_StatusBadge       = xresource_editor::asset_status_badge::None;
+                xresource_editor::asset_lock_badge   m_LockBadge         = xresource_editor::asset_lock_badge::None;
             };
 
             //
@@ -1610,10 +1610,10 @@ namespace e10
             //
             std::vector<temp_node> TempNodes;
 
-            const bool isParentTrashcan = m_SelectedLibrary.isValid() && m_ParentGUID == e10::folder::trash_guid_v;
+            const bool isParentTrashcan = m_SelectedLibrary.isValid() && m_ParentGUID == xresource_editor::folder::trash_guid_v;
 
             m_AssetMgr.m_mLibraryDB.FindAsReadOnly(m_SelectedLibrary
-            , [&](const std::unique_ptr<e10::library_db>& Lib)
+            , [&](const std::unique_ptr<xresource_editor::library_db>& Lib)
             {
                 Lib->m_InfoByTypeDataBase.FindAsReadOnly(m_ParentGUID.m_Type
                 , [&](const std::unique_ptr<library_db::info_db>& Entry)
@@ -1623,14 +1623,14 @@ namespace e10
                     // when splicing a resource's VIRTUAL children in (see below). A std::function's
                     // signature is fixed once erased, so these are passed explicitly at every call
                     // site rather than relying on default arguments.
-                    std::function<void(const e10::library_db::info_node&, int, xresource::full_guid)> CollectItems = [&](const e10::library_db::info_node& Node, int Depth, xresource::full_guid GroupRoot)
+                    std::function<void(const xresource_editor::library_db::info_node&, int, xresource::full_guid)> CollectItems = [&](const xresource_editor::library_db::info_node& Node, int Depth, xresource::full_guid GroupRoot)
                         {
                             TempNodes.reserve(TempNodes.size()+Node.m_lChildLinks.size());
 
                             for (auto& E : Node.m_lChildLinks)
                             {
                                 // Skip the trash can...
-                                if (E.m_Type == e10::folder::type_guid_v && E.m_Instance.m_Value == (e10::folder::trash_guid_v.m_Instance.m_Value)) continue;
+                                if (E.m_Type == xresource_editor::folder::type_guid_v && E.m_Instance.m_Value == (xresource_editor::folder::trash_guid_v.m_Instance.m_Value)) continue;
 
                                 //
                                 // Allow to filter by type
@@ -1647,9 +1647,9 @@ namespace e10
                                 if (bFilter) continue;
 
                                 // If the user wants us to
-                                if (m_RecuseChildFolder && E.m_Type == e10::folder::type_guid_v)
+                                if (m_RecuseChildFolder && E.m_Type == xresource_editor::folder::type_guid_v)
                                 {
-                                    Entry->m_InfoDataBase.FindAsReadOnly(E.m_Instance, [&](const e10::library_db::info_node& X){ CollectItems(X, 0, {}); } );
+                                    Entry->m_InfoDataBase.FindAsReadOnly(E.m_Instance, [&](const xresource_editor::library_db::info_node& X){ CollectItems(X, 0, {}); } );
                                     continue;
                                 }
 
@@ -1678,16 +1678,16 @@ namespace e10
                                     , [&](const std::unique_ptr<library_db::info_db>& Entry)
                                     {
                                         Entry->m_InfoDataBase.FindAsReadOnly(E.m_Instance
-                                            , [&](const e10::library_db::info_node& Node)
+                                            , [&](const xresource_editor::library_db::info_node& Node)
                                             {
                                                 Temp.m_ResourceName = Node.m_Info.m_Name;
                                                 Temp.m_bHasChildren = !Node.m_lChildLinks.empty();
                                                 Temp.m_bModified = Node.m_InfoChangeCount > 0;
-                                                Temp.m_bDeleted = Node.m_Info.m_RscLinks.empty() == false && Node.m_Info.m_RscLinks[0] == e10::folder::trash_guid_v;
+                                                Temp.m_bDeleted = Node.m_Info.m_RscLinks.empty() == false && Node.m_Info.m_RscLinks[0] == xresource_editor::folder::trash_guid_v;
 
                                                 // Real repo-relative path of this asset's Descriptor.txt (the
                                                 // sibling of info.txt - same derivation idiom used elsewhere in
-                                                // this codebase, e.g. E10_AssetMgr.h's CompilingThreadWorker),
+                                                // this codebase, e.g. xresource_editor_asset_mgr.h's CompilingThreadWorker),
                                                 // stripped of the library root prefix to match the source-
                                                 // control status cache's own key convention. Computed once and
                                                 // reused for both hooks; only computed when at least one hook
@@ -1708,9 +1708,9 @@ namespace e10
                                                     }
 
                                                     if (m_Browser.m_OnGetAssetStatusBadge)
-                                                        Temp.m_StatusBadge = static_cast<e10::asset_status_badge>(m_Browser.m_OnGetAssetStatusBadge(m_SelectedLibrary, DescriptorPath));
+                                                        Temp.m_StatusBadge = static_cast<xresource_editor::asset_status_badge>(m_Browser.m_OnGetAssetStatusBadge(m_SelectedLibrary, DescriptorPath));
                                                     if (m_Browser.m_OnGetAssetLockBadge)
-                                                        Temp.m_LockBadge = static_cast<e10::asset_lock_badge>(m_Browser.m_OnGetAssetLockBadge(m_SelectedLibrary, DescriptorPath));
+                                                        Temp.m_LockBadge = static_cast<xresource_editor::asset_lock_badge>(m_Browser.m_OnGetAssetLockBadge(m_SelectedLibrary, DescriptorPath));
                                                 }
                                             });
                                     });
@@ -1728,14 +1728,14 @@ namespace e10
                                 // when expanded) so a match inside a collapsed item is still
                                 // discoverable - the fuzzy-rank pass just below flattens the results
                                 // the same way Explorer/VS Code search does.
-                                if (E.m_Type != e10::folder::type_guid_v && TempNodes.back().m_bHasChildren
+                                if (E.m_Type != xresource_editor::folder::type_guid_v && TempNodes.back().m_bHasChildren
                                     && (m_IsExpanded[E] || !m_Browser.m_SearchString.empty()))
                                 {
                                     Lib->m_InfoByTypeDataBase.FindAsReadOnly(E.m_Type
                                         , [&](const std::unique_ptr<library_db::info_db>& ChildEntry)
                                         {
                                             ChildEntry->m_InfoDataBase.FindAsReadOnly(E.m_Instance
-                                                , [&](const e10::library_db::info_node& ChildNode)
+                                                , [&](const xresource_editor::library_db::info_node& ChildNode)
                                                 {
                                                     CollectItems(ChildNode, Depth + 1, E);
                                                 });
@@ -1744,7 +1744,7 @@ namespace e10
                             }
                         };
 
-                    Entry->m_InfoDataBase.FindAsReadOnly(m_ParentGUID.m_Instance, [&](const e10::library_db::info_node& X){ CollectItems(X, 0, {});} );
+                    Entry->m_InfoDataBase.FindAsReadOnly(m_ParentGUID.m_Instance, [&](const xresource_editor::library_db::info_node& X){ CollectItems(X, 0, {});} );
                 });
             });
 
@@ -1792,8 +1792,8 @@ namespace e10
                 std::sort(TempNodes.begin(), TempNodes.end()
                     , [](const temp_node& a, const temp_node& b)
                     {
-                        if (a.m_ResourceGUID.m_Type == e10::folder::type_guid_v && b.m_ResourceGUID.m_Type != e10::folder::type_guid_v) return true;
-                        if (a.m_ResourceGUID.m_Type != e10::folder::type_guid_v && b.m_ResourceGUID.m_Type == e10::folder::type_guid_v) return false;
+                        if (a.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v && b.m_ResourceGUID.m_Type != xresource_editor::folder::type_guid_v) return true;
+                        if (a.m_ResourceGUID.m_Type != xresource_editor::folder::type_guid_v && b.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v) return false;
 
                         if (a.m_ResourceName.empty() || b.m_ResourceName.empty()) return a.m_ResourceGUID.m_Instance.m_Value < b.m_ResourceGUID.m_Instance.m_Value;
                         return a.m_ResourceName < b.m_ResourceName;
@@ -1803,8 +1803,8 @@ namespace e10
                 std::sort(TempNodes.begin(), TempNodes.end()
                     , [](const temp_node& a, const temp_node& b)
                     {
-                        if (a.m_ResourceGUID.m_Type == e10::folder::type_guid_v && b.m_ResourceGUID.m_Type != e10::folder::type_guid_v) return true;
-                        if (a.m_ResourceGUID.m_Type != e10::folder::type_guid_v && b.m_ResourceGUID.m_Type == e10::folder::type_guid_v) return false;
+                        if (a.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v && b.m_ResourceGUID.m_Type != xresource_editor::folder::type_guid_v) return true;
+                        if (a.m_ResourceGUID.m_Type != xresource_editor::folder::type_guid_v && b.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v) return false;
 
                         if (a.m_ResourceName.empty() || b.m_ResourceName.empty()) return a.m_ResourceGUID.m_Instance.m_Value > b.m_ResourceGUID.m_Instance.m_Value;
                         return a.m_ResourceName > b.m_ResourceName;
@@ -1814,8 +1814,8 @@ namespace e10
                 std::sort(TempNodes.begin(), TempNodes.end()
                     , [](const temp_node& a, const temp_node& b)
                     {
-                        if (a.m_ResourceGUID.m_Type == e10::folder::type_guid_v && b.m_ResourceGUID.m_Type != e10::folder::type_guid_v) return true;
-                        if (a.m_ResourceGUID.m_Type != e10::folder::type_guid_v && b.m_ResourceGUID.m_Type == e10::folder::type_guid_v) return false;
+                        if (a.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v && b.m_ResourceGUID.m_Type != xresource_editor::folder::type_guid_v) return true;
+                        if (a.m_ResourceGUID.m_Type != xresource_editor::folder::type_guid_v && b.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v) return false;
 
                         if (a.m_TypeNameView.empty() || b.m_TypeNameView.empty())
                         {
@@ -1836,8 +1836,8 @@ namespace e10
                 std::sort(TempNodes.begin(), TempNodes.end()
                     , [](const temp_node& a, const temp_node& b)
                     {
-                        if (a.m_ResourceGUID.m_Type == e10::folder::type_guid_v && b.m_ResourceGUID.m_Type != e10::folder::type_guid_v) return true;
-                        if (a.m_ResourceGUID.m_Type != e10::folder::type_guid_v && b.m_ResourceGUID.m_Type == e10::folder::type_guid_v) return false;
+                        if (a.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v && b.m_ResourceGUID.m_Type != xresource_editor::folder::type_guid_v) return true;
+                        if (a.m_ResourceGUID.m_Type != xresource_editor::folder::type_guid_v && b.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v) return false;
 
                         if (a.m_TypeNameView.empty() || b.m_TypeNameView.empty())
                         {
@@ -1945,7 +1945,7 @@ namespace e10
 
 
                 // Folders resolve their icon by the "Folder" plugin's TypeName (not by TypeGUID -
-                // e10::folder::type_guid_v isn't guaranteed to be the SAME type guid as the
+                // xresource_editor::folder::type_guid_v isn't guaranteed to be the SAME type guid as the
                 // "xvirtual_folders" plugin's own TypeGUID, so a name lookup sidesteps that question
                 // entirely) - index 0/1 = full/empty, direct user design: "the folder should have 2
                 // icons... one empty and one full... the asset browser should know which one to
@@ -1953,7 +1953,7 @@ namespace e10
                 // so a missing/renamed plugin never leaves folders with no icon at all.
                 const char* pIcon = nullptr;
 
-                if (E.m_ResourceGUID.m_Type == e10::folder::type_guid_v)
+                if (E.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v)
                 {
                     E.m_Icon = m_AssetMgr.m_AssetPluginsDB.getIconRefByName("Folder", E.m_bHasChildren ? 0 : 1);
                     if (!E.m_Icon.isValid())
@@ -1990,7 +1990,7 @@ namespace e10
                 // smaller - steal hover for its own region instead of this button eating it.
                 const ImVec2 ItemScreenPos = ImGui::GetCursorScreenPos();
                 const ImVec2 ItemScreenMax(ItemScreenPos.x + button_sz.x, ItemScreenPos.y + button_sz.y);
-                const bool   bCanExpand    = E.m_bHasChildren && E.m_ResourceGUID.m_Type != e10::folder::type_guid_v;
+                const bool   bCanExpand    = E.m_bHasChildren && E.m_ResourceGUID.m_Type != xresource_editor::folder::type_guid_v;
                 if (E.m_VirtualDepth > 0 && E.m_VirtualGroupRoot == OpenGroupRoot)
                 {
                     OpenGroupMin = ImVec2(std::min(OpenGroupMin.x, ItemScreenPos.x), std::min(OpenGroupMin.y, ItemScreenPos.y));
@@ -2052,10 +2052,10 @@ namespace e10
                     if (ImGui::IsRectVisible(TileMin, ImVec2(TileMin.x + button_sz.x, TileMin.y + button_sz.y)))
                         E.m_Thumbnail = m_Browser.m_OnRequestThumbnail(E.m_ResourceGUID);
                 }
-                const e10::plugin_icon_ref& DrawIcon = E.m_Thumbnail.isValid() ? E.m_Thumbnail : E.m_Icon;
+                const xresource_editor::plugin_icon_ref& DrawIcon = E.m_Thumbnail.isValid() ? E.m_Thumbnail : E.m_Icon;
                 // Only when the big image is a computed per-resource thumbnail - type-as-thumbnail
                 // tiles already show the type glyph up top, so they get no label prefix icon.
-                const e10::plugin_icon_ref LabelTypeIcon = E.m_Thumbnail.isValid() ? E.m_Icon : e10::plugin_icon_ref{};
+                const xresource_editor::plugin_icon_ref LabelTypeIcon = E.m_Thumbnail.isValid() ? E.m_Icon : xresource_editor::plugin_icon_ref{};
 
                 int PressType = 0;
                 if (!bArrowClicked)
@@ -2067,7 +2067,7 @@ namespace e10
                                                   , bIsRenamingThis && m_RenameFirstOpen
                                                   , &bRenameCommit, &bRenameCancel, DrawIcon, E.m_StatusBadge, E.m_LockBadge, LabelTypeIcon); PressType == 2)
                 {
-                    if (E.m_ResourceGUID.m_Type == e10::folder::type_guid_v)
+                    if (E.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v)
                     {
                         if (m_ParentGUID.empty() == false)
                         {
@@ -2246,7 +2246,7 @@ namespace e10
 
 
                 // Drag target
-                if (E.m_ResourceGUID.m_Type == e10::folder::type_guid_v)
+                if (E.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v)
                 {
                     if (ImGui::BeginDragDropTarget())
                     {
@@ -2306,8 +2306,8 @@ namespace e10
                         }
 
                         // External creators - see the tree panel's identical block above and
-                        // e10::external_drop_registration_base's own comment.
-                        for (auto pReg = e10::external_drop_registration_base::g_pHead; pReg; pReg = pReg->m_pNext)
+                        // xresource_editor::external_drop_registration_base's own comment.
+                        for (auto pReg = xresource_editor::external_drop_registration_base::g_pHead; pReg; pReg = pReg->m_pNext)
                         {
                             if (const ImGuiPayload* ExtPayload = ImGui::AcceptDragDropPayload(pReg->m_pPayloadName))
                             {
@@ -2346,11 +2346,11 @@ namespace e10
                             system(xstrtool::To(Str).data());
                         }
 
-                        m_AssetMgr.m_mLibraryDB.FindAsReadOnly(m_SelectedLibrary, [&](const std::unique_ptr<e10::library_db>& Lib)
+                        m_AssetMgr.m_mLibraryDB.FindAsReadOnly(m_SelectedLibrary, [&](const std::unique_ptr<xresource_editor::library_db>& Lib)
                         {
                             Lib->m_InfoByTypeDataBase.FindAsReadOnly(E.m_ResourceGUID.m_Type, [&](const std::unique_ptr<library_db::info_db>& Entry)
                             {
-                                Entry->m_InfoDataBase.FindAsReadOnly(E.m_ResourceGUID.m_Instance, [&](const e10::library_db::info_node& InfoEntry)
+                                Entry->m_InfoDataBase.FindAsReadOnly(E.m_ResourceGUID.m_Instance, [&](const xresource_editor::library_db::info_node& InfoEntry)
                                 {
                                     if (ImGui::MenuItem("  Descriptor (Root)"))
                                     {
@@ -2466,7 +2466,7 @@ namespace e10
 
                     if (ImGui::MenuItem("  Open"))
                     {
-                        if (E.m_ResourceGUID.m_Type == e10::folder::type_guid_v)
+                        if (E.m_ResourceGUID.m_Type == xresource_editor::folder::type_guid_v)
                         {
                             if (m_ParentGUID.empty() == false)
                             {
@@ -2494,8 +2494,8 @@ namespace e10
                     // "SC Revert" - discards ALL local changes under this resource's own ".desc"
                     // folder (info.txt/Descriptor.txt/dependencies.txt) - direct user request. Default-
                     // empty m_OnRevertAssetPath means the item simply isn't offered for the other 7
-                    // examples (E10/E19-21/E23-25/E28), same optional-hook convention as Lock/Unlock
-                    // just above it in assert_browser. Multi-select: one hook call per selected item,
+                    // examples (xresource_editor/E19-21/E23-25/E28), same optional-hook convention as Lock/Unlock
+                    // just above it in asset_browser. Multi-select: one hook call per selected item,
                     // matching this same menu's own "Delete"/"Recompile Selected Items" shape.
                     //
                     // Live-tested real Dear ImGui pitfall: clicking a MenuItem closes ITS OWN
@@ -2652,11 +2652,11 @@ namespace e10
                     {
                         auto RevertOne = [&](xresource::full_guid Guid)
                         {
-                            m_AssetMgr.m_mLibraryDB.FindAsReadOnly(m_SCRevertPendingLibrary, [&](const std::unique_ptr<e10::library_db>& Lib)
+                            m_AssetMgr.m_mLibraryDB.FindAsReadOnly(m_SCRevertPendingLibrary, [&](const std::unique_ptr<xresource_editor::library_db>& Lib)
                             {
                                 Lib->m_InfoByTypeDataBase.FindAsReadOnly(Guid.m_Type, [&](const std::unique_ptr<library_db::info_db>& Entry)
                                 {
-                                    Entry->m_InfoDataBase.FindAsReadOnly(Guid.m_Instance, [&](const e10::library_db::info_node& InfoEntry)
+                                    Entry->m_InfoDataBase.FindAsReadOnly(Guid.m_Instance, [&](const xresource_editor::library_db::info_node& InfoEntry)
                                     {
                                         const auto SlashPos = InfoEntry.m_Path.find_last_of(L'\\');
                                         std::wstring FolderPath = (SlashPos == std::wstring::npos) ? InfoEntry.m_Path : InfoEntry.m_Path.substr(0, SlashPos);
@@ -2702,7 +2702,7 @@ namespace e10
                     // screen - direct user request.
                     std::string InstanceGuidText, TypeGuidText, InfoReadText, InfoWriteText, DescWriteText, ResWriteText, DependenciesText, CommentText;
 
-                    m_AssetMgr.getNodeInfo( m_SelectedLibrary, E.m_ResourceGUID, [&]( e10::library_db::info_node& NodeInfo )
+                    m_AssetMgr.getNodeInfo( m_SelectedLibrary, E.m_ResourceGUID, [&]( xresource_editor::library_db::info_node& NodeInfo )
                     {
                         InstanceGuidText = std::format("{:X}", NodeInfo.m_Info.m_Guid.m_Instance.m_Value);
                         TypeGuidText     = std::format("{:X}", NodeInfo.m_Info.m_Guid.m_Type.m_Value);
@@ -2756,7 +2756,7 @@ namespace e10
                         CommentText = NodeInfo.m_Info.m_Comment;
                     });
 
-                    e10::PlaceTooltipAwayFromEdges();
+                    xresource_editor::PlaceTooltipAwayFromEdges();
                     ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
                     ImGui::BeginTooltip();
 
@@ -2824,7 +2824,7 @@ namespace e10
                 }
 
 
-                //   if (E.m_ResourceGUID.m_Type == e10::folder_type_guid_v)ImGui::PopStyleColor(1);
+                //   if (E.m_ResourceGUID.m_Type == xresource_editor::folder_type_guid_v)ImGui::PopStyleColor(1);
                 float last_button_x2 = ImGui::GetItemRectMax().x;
                 float next_button_x2 = last_button_x2 + StyleSpacing + button_sz.x; // Expected position if next button was on same line
                 if (n + 1 < buttons_count && next_button_x2 < window_visible_x2)
@@ -2854,10 +2854,10 @@ namespace e10
             // Empty right-panel background: drop into the currently open folder (m_ParentGUID).
             // Per-item BeginDragDropTarget above still handles "onto this row"; this covers the
             // natural empty space (same idea as files_tab's FilesBackgroundDropTarget). Skip trash.
-            if (m_SelectedLibrary.isValid() && m_ParentGUID != e10::folder::trash_guid_v
+            if (m_SelectedLibrary.isValid() && m_ParentGUID != xresource_editor::folder::trash_guid_v
                 && ImGui::BeginDragDropTargetCustom(ImGui::GetCurrentWindow()->ContentRegionRect, ImGui::GetID("ResourcesBackgroundDropTarget")))
             {
-                for (auto pReg = e10::external_drop_registration_base::g_pHead; pReg; pReg = pReg->m_pNext)
+                for (auto pReg = xresource_editor::external_drop_registration_base::g_pHead; pReg; pReg = pReg->m_pNext)
                 {
                     if (const ImGuiPayload* ExtPayload = ImGui::AcceptDragDropPayload(pReg->m_pPayloadName))
                     {
@@ -2898,7 +2898,7 @@ namespace e10
         std::vector<xresource::full_guid>                   m_SelectedItems         = {};
         folder::guid                                        m_ParentGUID            = {};
         sort_base_on                                        m_ShortBasedOn          = sort_base_on::NAME_ASCENDING;
-        std::unordered_map<e10::folder::guid, bool>         m_IsTreeNodeOpen        = {};
+        std::unordered_map<xresource_editor::folder::guid, bool>         m_IsTreeNodeOpen        = {};
         // Expand/collapse state for a resource's VIRTUAL children (e.g. a font's cascaded texture) -
         // keyed by full_guid, not folder::guid, since a virtual-child-bearing resource can be any
         // type, not just a folder. See RightPanel()'s own CollectItems comment on how this differs

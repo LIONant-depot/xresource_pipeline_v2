@@ -1,16 +1,16 @@
-#ifndef E10_INSPECTOR_PICKERS_H
-#define E10_INSPECTOR_PICKERS_H
+#ifndef XRESOURCE_EDITOR_INSPECTOR_PICKERS_H
+#define XRESOURCE_EDITOR_INSPECTOR_PICKERS_H
 #pragma once
 
 // Resource picking for xproperty inspectors: a property that references a resource shows the resource's name as a button
 // and opens the asset browser as a popup to choose another. Used by every editor with resource-reference properties.
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_AssetBrowser.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_asset_browser.h"
 #include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
 
 #include <span>
 #include <string>
 
-namespace e10
+namespace xresource_editor
 {
     //---------------------------------------------------------------------------
     // Resource-picker wiring - same trio every editor with a resource-ref property carries its own
@@ -29,7 +29,7 @@ namespace e10
 
         auto FullGuid = xresource::g_Mgr.getFullGuid(PreFullGuid);
         Out.clear();
-        e10::g_LibMgr.getNodeInfo(FullGuid, [&](e10::library_db::info_node& Node) { Out = Node.m_Info.m_Name; });
+        xresource_editor::g_LibMgr.getNodeInfo(FullGuid, [&](xresource_editor::library_db::info_node& Node) { Out = Node.m_Info.m_Name; });
         if (Out.empty()) Out = std::format("{:X}", FullGuid.m_Instance.m_Value);
     }
 
@@ -40,7 +40,7 @@ namespace e10
         bOpen = ImGui::Button(Name.c_str(), ImVec2(-1, 0));
     }
 
-    inline e10::assert_browser g_AssetBrowserPopup;
+    inline xresource_editor::asset_browser g_AssetBrowserPopup;
 
     // NOTE: only safe to call with an `Open` that is a genuinely FRESH per-frame local (e.g. declared
     // inside a loop body, or an inspector row's own transient state) - never a persistent member
@@ -54,7 +54,7 @@ namespace e10
     inline void ResourceBrowserPopup(const void* pUID, bool& Open, xresource::full_guid& Output, std::span<const xresource::type_guid> Filters)
     {
         // Drag-and-drop onto this property's own wigzmo button, from a resource tile dragged out of the
-        // asset browser (E10_asset_browser_virtual_tree_tab.h's own "DESCRIPTOR_GUID" payload). This was
+        // asset browser (xresource_editor_asset_browser_virtual_tree_tab.h's own "DESCRIPTOR_GUID" payload). This was
         // simply never implemented here - confirmed live: every WireResourcePickerCallbacks consumer
         // (every editor using the generic picker, not just this one) could only ever assign a reference
         // by clicking the button to open the browse popup; dragging silently did nothing, not because of
@@ -65,7 +65,7 @@ namespace e10
         {
             struct drag_and_drop_folder_payload_t
             {
-                e10::folder::guid    m_Parent;
+                xresource_editor::folder::guid    m_Parent;
                 xresource::full_guid m_Source;
                 bool                 m_bSelection;
             };
@@ -92,7 +92,7 @@ namespace e10
             return;
 
         if (Open && not g_AssetBrowserPopup.isVisible())
-            g_AssetBrowserPopup.ShowAsPopup(e10::g_LibMgr, pUID, Filters, Output.m_Type);
+            g_AssetBrowserPopup.ShowAsPopup(xresource_editor::g_LibMgr, pUID, Filters, Output.m_Type);
 
         if (auto SelectedAsset = g_AssetBrowserPopup.getSelectedAsset(); SelectedAsset.empty() == false)
         {
@@ -114,14 +114,14 @@ namespace e10
     {
         Inspector.m_OnResourceWigzmos.Register<[](xproperty::inspector&, const xproperty::type::object&, void*, std::string_view, bool& bOpen, const xresource::full_guid& PreFullGuid)
         {
-            e10::RenderResourceWigzmos(bOpen, PreFullGuid);
+            xresource_editor::RenderResourceWigzmos(bOpen, PreFullGuid);
         }>();
         Inspector.m_OnResourceBrowser.Register<[](xproperty::inspector&, const xproperty::type::object&, void*, std::string_view Path, bool& bOpen, xresource::full_guid& Out, std::span<const xresource::type_guid> Filters)
         {
             const void* pUID = reinterpret_cast<const void*>(std::hash<std::string_view>{}(Path));
-            e10::ResourceBrowserPopup(pUID, bOpen, Out, Filters);
+            xresource_editor::ResourceBrowserPopup(pUID, bOpen, Out, Filters);
         }>();
     }
 }
 
-#endif // E10_INSPECTOR_PICKERS_H
+#endif // XRESOURCE_EDITOR_INSPECTOR_PICKERS_H

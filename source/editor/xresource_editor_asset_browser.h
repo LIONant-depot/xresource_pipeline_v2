@@ -1,18 +1,18 @@
-#ifndef _E10_ASSETBROWSER_H
-#define _E10_ASSETBROWSER_H
+#ifndef _XRESOURCE_EDITOR_ASSETBROWSER_H
+#define _XRESOURCE_EDITOR_ASSETBROWSER_H
 #pragma once
 #include "dependencies/xeditor/include/xeditor/widgets.h"
 #include <cstring>
 #include "source/Tools/xgpu_imgui_breach.h"
 #include "source/Tools/xgpu_xcore_bitmap_helpers.h"
-#include "E10_AssetMgr.h"
+#include "xresource_editor_asset_mgr.h"
 
-namespace e10
+namespace xresource_editor
 {
-    struct assert_browser;
+    struct asset_browser;
     struct asset_browser_tab_base;
 
-    // Values returned by assert_browser::m_OnGetAssetStatusBadge / m_OnGetAssetLockBadge - plain
+    // Values returned by asset_browser::m_OnGetAssetStatusBadge / m_OnGetAssetLockBadge - plain
     // ints in the callback signatures (std::function's own erased type can't easily forward-declare
     // an enum class defined after it), cast to/from these enums at each of the two call sites
     // (virtual_tree_tab's own render code, and whoever implements the hooks). Deliberately generic/
@@ -194,10 +194,10 @@ namespace e10
     }
 
     //------------------------------------------------------------------------------------------------
-    // The GPU-upload half of the plugin icon atlas - deliberately NOT in E10_PluginMgr.h/
-    // E10_PluginIconAtlas.h, which must stay headless (see asset_plugins_db::m_IconAtlasGPUHandle's
+    // The GPU-upload half of the plugin icon atlas - deliberately NOT in xresource_editor_plugin_mgr.h/
+    // xresource_editor_plugin_icon_atlas.h, which must stay headless (see asset_plugins_db::m_IconAtlasGPUHandle's
     // own comment). Lazily uploads Db.m_IconAtlasBitmap (built headlessly at OpenProject time) into
-    // ONE shared xgpu::texture the first time ANY assert_browser instance calls this - g_LibMgr/
+    // ONE shared xgpu::texture the first time ANY asset_browser instance calls this - g_LibMgr/
     // asset_plugins_db is a single process-wide global every example's own browser widget (and every
     // shared popup picker) points at, so this makes every one of them reuse the same upload rather
     // than each re-uploading its own copy. A no-op (fast pointer cast) once populated.
@@ -218,7 +218,7 @@ namespace e10
 
     struct browser_registration_base
     {
-        virtual std::unique_ptr<asset_browser_tab_base> CreateInstance(assert_browser& Browser) noexcept = 0;
+        virtual std::unique_ptr<asset_browser_tab_base> CreateInstance(asset_browser& Browser) noexcept = 0;
         browser_registration_base(float Sortkey ) noexcept : m_SortKey{ Sortkey }
         {
             //
@@ -238,7 +238,7 @@ namespace e10
     };
 
     // T_DOCKABLE_ONLY: this tab never appears in a POPUP picker's tab bar - only in DOCKABLE mode's
-    // own independent-windows layout (E10_AssetBrowser.h's MainWindow()). Defaults to false so every
+    // own independent-windows layout (xresource_editor_asset_browser.h's MainWindow()). Defaults to false so every
     // pre-existing registration (virtual_tree_tab, compiler_tab) needs zero changes to keep showing up
     // in both modes exactly as before; new DOCKABLE-only windows (Resource Plugin, Asset) pass true.
     // T_HAS_LEFT_PANEL: whether DOCKABLE mode should give this tab a left+right split (calling both
@@ -249,7 +249,7 @@ namespace e10
     struct browser_registration : browser_registration_base
     {
         browser_registration() noexcept : browser_registration_base{ T_SORT_KEY } {}
-        std::unique_ptr<asset_browser_tab_base> CreateInstance(assert_browser& Browser) noexcept override
+        std::unique_ptr<asset_browser_tab_base> CreateInstance(asset_browser& Browser) noexcept override
         {
             auto p = std::make_unique<T>(Browser, TabName.m_Value);
             p->m_bDockableOnly = T_DOCKABLE_ONLY;
@@ -264,7 +264,7 @@ namespace e10
     // without including that tab's own implementation header).
     struct drag_and_drop_folder_payload_t
     {
-        e10::folder::guid           m_Parent;
+        xresource_editor::folder::guid           m_Parent;
         xresource::full_guid        m_Source;
         bool                        m_bSelection;
     };
@@ -312,9 +312,9 @@ namespace e10
         virtual void LeftPanel()    = 0;
         virtual void RightPanel()   = 0;
 
-        asset_browser_tab_base( assert_browser& Browser, const char* pName ) : m_Browser{ Browser }, m_pName(pName){}
+        asset_browser_tab_base( asset_browser& Browser, const char* pName ) : m_Browser{ Browser }, m_pName(pName){}
 
-        assert_browser&     m_Browser;
+        asset_browser&     m_Browser;
         const char*         m_pName;
 
         // Set post-construction by browser_registration<>::CreateInstance from its own template
@@ -323,7 +323,7 @@ namespace e10
         bool                m_bHasLeftPanel     = true;
 
         // DOCKABLE mode's own per-tab left-panel splitter width (independent of POPUP mode's single
-        // shared assert_browser::m_SplitSize1 - each DOCKABLE window is now its own independent
+        // shared asset_browser::m_SplitSize1 - each DOCKABLE window is now its own independent
         // ImGui window, so each needs its own remembered splitter position). Negative = uninitialized,
         // same convention as m_SplitSize1.
         float               m_DockableSplitSize = -1.0f;
@@ -332,7 +332,7 @@ namespace e10
     //=============================================================================
     //=============================================================================
 
-    struct assert_browser
+    struct asset_browser
     {
         // How this browser instance presents itself. POPUP (the default, matching every existing
         // call site) is a one-shot modal picker: undockable, auto-closes the moment a selection is
@@ -357,9 +357,9 @@ namespace e10
         // m_FilterByLibrary's own comment. No existing call site passes this yet (none of the 8
         // examples' own resource-reference pickers currently resolve "which library owns the resource
         // being edited" - that context doesn't exist anywhere in their own state today), so this is
-        // real, ready infrastructure with zero current consumers, same as several of assert_browser's
+        // real, ready infrastructure with zero current consumers, same as several of asset_browser's
         // own m_On* hooks were when they first landed.
-        void ShowAsPopup(e10::library_mgr& AssetMgr, const void* pUID, std::span<const xresource::type_guid> Types, xresource::type_guid AdditionalType, std::span<const library::guid> AllowedLibraries = {} )
+        void ShowAsPopup(xresource_editor::library_mgr& AssetMgr, const void* pUID, std::span<const xresource::type_guid> Types, xresource::type_guid AdditionalType, std::span<const library::guid> AllowedLibraries = {} )
         {
             assert(m_pPopupUID == nullptr);
 
@@ -389,7 +389,7 @@ namespace e10
                     if (E.m_TypeGUID != AdditionalType)
                     {
                         // We always leave the folder in...
-                        if ( E.m_TypeGUID != e10::folder::type_guid_v )
+                        if ( E.m_TypeGUID != xresource_editor::folder::type_guid_v )
                         {
                             m_FilterByType.push_back(E.m_TypeGUID);
                         }
@@ -443,7 +443,7 @@ namespace e10
 
         //=============================================================================
 
-        void RenderAsPopup(e10::library_mgr& AssetMgr, xresource::mgr& ResourceMgr)
+        void RenderAsPopup(xresource_editor::library_mgr& AssetMgr, xresource::mgr& ResourceMgr)
         {
             if (m_bRenderBrowser == false) return;
             bool UsedtoBeVisible = m_bRenderBrowser;
@@ -459,8 +459,8 @@ namespace e10
 
         // Called once per example, right after that example's own local xgpu::device is created (the
         // same place/timing OpenProject used to require a Device for, before that got reverted back
-        // to headless - see E10_AssetMgr.h's own comment). Not a constructor parameter: several
-        // assert_browser instances in this codebase are static-duration globals (shared popup
+        // to headless - see xresource_editor_asset_mgr.h's own comment). Not a constructor parameter: several
+        // asset_browser instances in this codebase are static-duration globals (shared popup
         // pickers) constructed before main() runs, i.e. before any device exists anywhere - a setter
         // called later, once a device is actually live, is the only shape that works for those too.
         void SetDevice(xgpu::device& Device) noexcept { m_pDevice = &Device; }
@@ -481,7 +481,7 @@ namespace e10
         //=============================================================================
 
         // Init tabs/device half of Render() without opening windows — used by the Host Drawer.
-        void EnsureInitialized(e10::library_mgr& AssetMgr, xresource::mgr& ResourceMgr) noexcept
+        void EnsureInitialized(xresource_editor::library_mgr& AssetMgr, xresource::mgr& ResourceMgr) noexcept
         {
             if (m_pAssetMgr == nullptr)
             {
@@ -495,7 +495,7 @@ namespace e10
 
         // Draw one DOCKABLE tab's body into the *current* ImGui window (Host Drawer tab).
         // TabKey matches a substring of the tab label (e.g. "Resources", "Assets", "Compilation").
-        void RenderEmbeddedTab(e10::library_mgr& AssetMgr, xresource::mgr& ResourceMgr, const char* TabKey) noexcept
+        void RenderEmbeddedTab(xresource_editor::library_mgr& AssetMgr, xresource::mgr& ResourceMgr, const char* TabKey) noexcept
         {
             EnsureInitialized(AssetMgr, ResourceMgr);
             if (TabKey == nullptr || TabKey[0] == 0) return;
@@ -559,7 +559,7 @@ namespace e10
             }
         }
 
-        void Render( e10::library_mgr& AssetMgr, xresource::mgr& ResourceMgr )
+        void Render( xresource_editor::library_mgr& AssetMgr, xresource::mgr& ResourceMgr )
         {
             if (m_bRenderBrowser == false) return;
 
@@ -576,7 +576,7 @@ namespace e10
                 }
             }
 
-            // Lazily upload the shared plugin-icon atlas texture (E10_PluginIconAtlas.h built the
+            // Lazily upload the shared plugin-icon atlas texture (xresource_editor_plugin_icon_atlas.h built the
             // CPU bitmap headlessly at OpenProject time; this is the GPU half, deliberately kept out
             // of the headless asset-mgr code - see EnsureIconAtlasTexture's own comment). A no-op
             // once any browser instance has already done this. Silently skipped if SetDevice was
@@ -651,9 +651,9 @@ namespace e10
         }
 
         // Public (not protected like the rest of this section below) - a small, self-contained,
-        // static utility with no dependency on assert_browser's own state, reused by tab structs that
-        // are NOT derived from assert_browser (e.g. plugin_tab's own Git/Properties resizable split -
-        // E10_asset_browser_plugin_tab.h) for the exact same draggable-divider behavior
+        // static utility with no dependency on asset_browser's own state, reused by tab structs that
+        // are NOT derived from asset_browser (e.g. plugin_tab's own Git/Properties resizable split -
+        // xresource_editor_asset_browser_plugin_tab.h) for the exact same draggable-divider behavior
         // RenderDockableWindows() already uses for the outer Left/Right split.
         static void Splitter( bool split_vertically, float thickness, float* size1, float* size2, float min_size1, float min_size2, float total_size, float total_height )
         {
@@ -708,7 +708,7 @@ namespace e10
 
     public:
         // ScaleButton/RenderPathHistoryPopup are called from files_tab.h/virtual_tree_tab.h, which hold
-        // assert_browser only by reference (not derived from it), so they need real public access, not
+        // asset_browser only by reference (not derived from it), so they need real public access, not
         // the protected level everything else in this block uses - re-closed with `protected:` again
         // right after RenderPathHistoryPopup so nothing else here is accidentally exposed.
         static bool ScaleButton(const char* pTxt, float Scale)
@@ -974,7 +974,7 @@ namespace e10
                 float total_height = ImGui::GetContentRegionAvail().y - (m_DisplayMode == display_mode::POPUP ? 40.0f : 0.0f);
                 constexpr float ButtonWidth = 4.0f;
                 // m_SplitSize1 is per-instance state (was previously a function-local `static`, which
-                // meant every assert_browser instance in the process - the DOCKABLE main browser AND
+                // meant every asset_browser instance in the process - the DOCKABLE main browser AND
                 // the POPUP asset picker - shared the exact same splitter position, initialized once
                 // from whichever instance's width happened to run MainWindow() first). Re-clamp every
                 // frame (not just while actively dragging - Splitter() itself only clamps on an active
@@ -1075,7 +1075,7 @@ namespace e10
 
         using tab_list = std::vector<std::unique_ptr<asset_browser_tab_base>>;
 
-        e10::library_mgr*                   m_pAssetMgr             = nullptr;
+        xresource_editor::library_mgr*                   m_pAssetMgr             = nullptr;
         xresource::mgr*                     m_pResourceMgr          = nullptr;
         xgpu::device*                       m_pDevice               = nullptr;   // see SetDevice()
         xresource::full_guid                m_LastGeneratedAsset    = {};
@@ -1085,7 +1085,7 @@ namespace e10
         bool                                m_bRenderBrowser        = false;
         // Left-panel width of MainWindow()'s splitter, in pixels. Negative = "not yet initialized for
         // this instance" (see MainWindow() for why this must be per-instance, not a function-local
-        // static shared by every assert_browser in the process).
+        // static shared by every asset_browser in the process).
         float                               m_SplitSize1            = -1.0f;
         tab_list                            m_Tabs                  = {};
         std::array<char,256>                m_WindowName            = {"Resource Browser"};
@@ -1112,7 +1112,7 @@ namespace e10
         std::vector<library::guid>          m_FilterByLibrary       = {};
 
         // Optional interception hooks for the browser's own real mutations (rename/move-between-
-        // folders/trash/create) - default-empty, so every existing consumer (E10, E19-E21, E23-E25,
+        // folders/trash/create) - default-empty, so every existing consumer (xresource_editor, E19-E21, E23-E25,
         // E28) is byte-for-byte unaffected. Set by a consumer that wants these actions to go through
         // its own undo/command system (E29_LevelSceneEditorKit.h's RegisterAssetBrowserCallbacks) -
         // same additive, opt-in pattern already used for xproperty::inspector's own
@@ -1135,8 +1135,8 @@ namespace e10
             m_OnCreateAsset;
 
         // Same opt-in, default-empty pattern as the five hooks above, for the REAL Assets-folder file
-        // mutations (Phase 4/5 of the window-split plan - E10_AssetMgr.h's MoveAssetFile/CopyAssetFile,
-        // wrapped as xundo commands in E29_Commands_AssetFiles.h). files_tab (E10_asset_browser_
+        // mutations (Phase 4/5 of the window-split plan - xresource_editor_asset_mgr.h's MoveAssetFile/CopyAssetFile,
+        // wrapped as xundo commands in E29_Commands_AssetFiles.h). files_tab (xresource_editor_asset_browser
         // files_tab.h) checks these first and calls them INSTEAD of library_mgr directly when set - only
         // E29 (RegisterAssetBrowserCallbacks) wires them today, every other DOCKABLE-only consumer of
         // files_tab (there are none yet) would fall back to a direct, non-undo-routed call. Rename and
@@ -1167,7 +1167,7 @@ namespace e10
 
         // Optional hooks so virtual_tree_tab's own tiles can show small status/lock badges without
         // this shared file knowing anything about WHERE that status comes from - default-empty, so
-        // every existing consumer (E10, E19-E21, E23-E25, E28) renders exactly as before. Takes the
+        // every existing consumer (xresource_editor, E19-E21, E23-E25, E28) renders exactly as before. Takes the
         // REAL relative path (not the virtual descriptor guid) because status/locking are properties
         // of the real file on disk, resolved by whoever wires this up - today only E29
         // (RegisterAssetBrowserCallbacks), backed by extensions/source_control/E29_SourceControlStatus.h.
@@ -1258,7 +1258,7 @@ namespace e10
             m_OnRemoveLibraryDependency;
 
         // Optional hook so files_tab can find the real Win32 HWND currently hosting this browser, for
-        // real OS-level (Explorer) drag-out (E10_AssetOleDrag.h) - it needs a screen-space window rect
+        // real OS-level (Explorer) drag-out (xresource_editor_asset_ole_drag.h) - it needs a screen-space window rect
         // to decide "has the drag left our own app" every frame. Returns a std::size_t castable to HWND
         // (matches xgpu::window::getSystemWindowHandle's own return type), or 0 if not wired - default-
         // empty like every hook above, so OS drag-out is simply disabled for every consumer except E29
@@ -1270,7 +1270,7 @@ namespace e10
             m_OnGetMainWindowHandle;
 
         // Optional, default-empty list of extra top-level sections shown above the "Plugins" tree
-        // node in plugin_tab's left panel (E10_asset_browser_plugin_tab.h) - e.g. E29's "Scripting"
+        // node in plugin_tab's left panel (xresource_editor_asset_browser_plugin_tab.h) - e.g. E29's "Scripting"
         // section, which selects into Project.config's build-membership properties instead of a
         // plugin. Each entry's callback draws ONLY its right-panel content (no Begin/End, no
         // Properties/Git split) - same "hook owns its own content, host owns layout" convention as
@@ -1290,5 +1290,5 @@ namespace e10
         std::vector<extra_tree_section> m_ExtraPluginTabSections = {};
     };
 
-} // namespace e10
+} // namespace xresource_editor
 #endif

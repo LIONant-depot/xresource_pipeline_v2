@@ -1,25 +1,25 @@
-#ifndef E10_COMMAND_GUIDS_H
-#define E10_COMMAND_GUIDS_H
+#ifndef XRESOURCE_EDITOR_COMMAND_GUIDS_H
+#define XRESOURCE_EDITOR_COMMAND_GUIDS_H
 #pragma once
 
-// How the resource commands (E10_Commands_*.h) write and read library and asset guids on the command line.
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_AssetMgr.h"
+// How the resource commands (xresource_editor_commands*.h) write and read library and asset guids on the command line.
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_asset_mgr.h"
 #include <format>
 #include <string>
 #include <string_view>
 
-namespace e10::commands
+namespace xresource_editor::commands
 {
-    // Same shape as ParseSceneGuid/FormatSceneGuid - e10::library::guid is also a
+    // Same shape as ParseSceneGuid/FormatSceneGuid - xresource_editor::library::guid is also a
     // xresource::def_guid<> (a single instance value, implicit compile-time type), same as
     // xecs::scene::guid/xecs::level::guid. Named separately (not just reused via a template) so a
     // command's own signature stays self-documenting about which guid space an argument names.
-    inline e10::library::guid ParseLibraryGuid(std::string_view Text) noexcept
+    inline xresource_editor::library::guid ParseLibraryGuid(std::string_view Text) noexcept
     {
-        return e10::library::guid{ .m_Instance = { std::strtoull(std::string(Text).c_str(), nullptr, 16) } };
+        return xresource_editor::library::guid{ .m_Instance = { std::strtoull(std::string(Text).c_str(), nullptr, 16) } };
     }
 
-    inline std::string FormatLibraryGuid(e10::library::guid Guid) noexcept
+    inline std::string FormatLibraryGuid(xresource_editor::library::guid Guid) noexcept
     {
         return std::format("{:016X}", Guid.m_Instance.m_Value);
     }
@@ -43,4 +43,4 @@ namespace e10::commands
     }
 }
 
-#endif // E10_COMMAND_GUIDS_H
+#endif // XRESOURCE_EDITOR_COMMAND_GUIDS_H

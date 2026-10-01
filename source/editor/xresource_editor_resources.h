@@ -1,5 +1,5 @@
-#ifndef E10_RESOURCES_H
-#define E10_RESOURCES_H
+#ifndef XRESOURCE_EDITOR_RESOURCES_H
+#define XRESOURCE_EDITOR_RESOURCES_H
 #pragma once
 
 #include "source/xGPU.h"

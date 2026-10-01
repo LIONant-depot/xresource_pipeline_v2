@@ -1,15 +1,15 @@
 #ifndef ASSERT_BROWSER_COMPILER_TAB
 #define ASSERT_BROWSER_COMPILER_TAB
 #pragma once
-#include "E10_AssetBrowser.h"
-#include "E10_AssetMgr.h"
+#include "xresource_editor_asset_browser.h"
+#include "xresource_editor_asset_mgr.h"
 #include "imgui.h"
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #   define IMGUI_DEFINE_MATH_OPERATORS // Allows ImVec2 arithmetic
 #endif
 #include "imgui_internal.h"       // For TreeNodeBehavior, GetIDWithSeed, etc.
 
-namespace e10
+namespace xresource_editor
 {
     //=============================================================================
 
@@ -117,18 +117,18 @@ namespace e10
 
     //=============================================================================
 
-    struct compiler_tab : e10::asset_browser_tab_base
+    struct compiler_tab : xresource_editor::asset_browser_tab_base
     {
-        e10::library_mgr& m_AssetMgr;
+        xresource_editor::library_mgr& m_AssetMgr;
 
         //=============================================================================
 
-        compiler_tab(assert_browser& Browser, const char* pName)
+        compiler_tab(asset_browser& Browser, const char* pName)
             : asset_browser_tab_base{ Browser, pName }
             , m_AssetMgr{ *Browser.getAssetMgr() }
         {
-            m_AssetMgr.m_OnOpenProjectEvent.Register<&e10::compiler_tab::OnOpenNewProject>(*this);
-            m_AssetMgr.m_OnCloseProjectEvent.Register<&e10::compiler_tab::OnCloseProject>(*this);
+            m_AssetMgr.m_OnOpenProjectEvent.Register<&xresource_editor::compiler_tab::OnOpenNewProject>(*this);
+            m_AssetMgr.m_OnCloseProjectEvent.Register<&xresource_editor::compiler_tab::OnCloseProject>(*this);
 
             if (m_AssetMgr.m_ProjectGUID.isValid())
             {
@@ -137,13 +137,13 @@ namespace e10
 
         //=============================================================================
 
-        void OnOpenNewProject(e10::library_mgr&)
+        void OnOpenNewProject(xresource_editor::library_mgr&)
         {
         }
 
         //=============================================================================
 
-        void OnCloseProject(e10::library_mgr&)
+        void OnCloseProject(xresource_editor::library_mgr&)
         {
         }
 
@@ -366,7 +366,7 @@ namespace e10
                         // compiled output is gone - it never actually re-queued anything itself. Now
                         // uses the same "clear timestamps, let AddToCompilationQueueIfNeeded decide"
                         // primitive RecompileResource already established for a single resource
-                        // (E10_AssetMgr.h), just walked across every resource in every library.
+                        // (xresource_editor_asset_mgr.h), just walked across every resource in every library.
                         if (ImGui::MenuItem("  All Resources"))
                             m_AssetMgr.RecompileAllResources();
 

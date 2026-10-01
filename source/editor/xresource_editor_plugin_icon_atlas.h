@@ -1,19 +1,19 @@
-#ifndef E10_PLUGIN_ICON_ATLAS_H
-#define E10_PLUGIN_ICON_ATLAS_H
+#ifndef XRESOURCE_EDITOR_PLUGIN_ICON_ATLAS_H
+#define XRESOURCE_EDITOR_PLUGIN_ICON_ATLAS_H
 #pragma once
 
 // Builds asset_plugins_db::m_IconAtlasBitmap - the packed CPU pixels for every plugin's 128x128 PNG
 // icon(s) - that the Asset Browser later uploads to a real GPU texture and draws from
-// (E10_asset_browser_virtual_tree_tab.h's WrappedButton2 and E10_asset_browser_compiler_tab.h).
+// (xresource_editor_asset_browser_virtual_tree_tab.h's WrappedButton2 and xresource_editor_asset_browser_compiler_tab.h).
 // Replaces the old per-plugin font-glyph (m_Icon) rendering.
 //
 // Deliberately headless - NO xgpu/GPU include anywhere in this file. asset_plugins_db/library_mgr
 // must stay usable with no GPU device/render context at all (batch/CLI tools) - direct user
 // correction: "the asset mgr needs to run headless. So while it can build the atlas it should not
 // build the texture.... This is something that the browser should do." The actual GPU upload lives
-// in E10_AssetBrowser.h (assert_browser's own texture-ensure step), lazily, the first time any
+// in xresource_editor_asset_browser.h (asset_browser's own texture-ensure step), lazily, the first time any
 // browser instance actually needs to draw an icon - see asset_plugins_db::m_IconAtlasGPUHandle's own
-// comment (E10_PluginMgr.h) for how multiple browser instances share that one upload.
+// comment (xresource_editor_plugin_mgr.h) for how multiple browser instances share that one upload.
 //
 // Direct user design: "the icons can be loading in different threads into xbitmaps, which later
 // are combined into the final atlas" - each icon file is loaded on its own std::async worker (same
@@ -29,9 +29,9 @@
 
 #include <future>
 #include "dependencies/xbmp_tools/src/xbmp_tools.h"
-#include "E10_PluginMgr.h"
+#include "xresource_editor_plugin_mgr.h"
 
-namespace e10
+namespace xresource_editor
 {
     inline xerr BuildPluginIconAtlas(asset_plugins_db& Db) noexcept
     {

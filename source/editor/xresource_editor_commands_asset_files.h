@@ -1,17 +1,17 @@
-#ifndef E10_COMMANDS_ASSET_FILES_H
-#define E10_COMMANDS_ASSET_FILES_H
+#ifndef XRESOURCE_EDITOR_COMMANDS_ASSET_FILES_H
+#define XRESOURCE_EDITOR_COMMANDS_ASSET_FILES_H
 #pragma once
 
 // Raw Asset FILE command/undo layer - Phase 4 of the Asset Browser window-split plan (see plan file
-// lively-knitting-sifakis.md). Wraps e10::library_mgr's own new raw-file primitives (E10_AssetMgr.h:
+// lively-knitting-sifakis.md). Wraps xresource_editor::library_mgr's own new raw-file primitives (xresource_editor_asset_mgr.h:
 // MoveAssetFile/ComputeTrashPath/CopyAssetFile) as thin xundo commands - same "not modifying
-// library_mgr itself" shape E10_Commands_Assets.h already established for the VIRTUAL descriptor
+// library_mgr itself" shape xresource_editor_commands_assets.h already established for the VIRTUAL descriptor
 // tree's own Rename/Move/Delete commands, just for the REAL Assets/ folder on disk instead.
 //
 // Every path argument here is a full path relative to the LIBRARY ROOT (e.g.
 // "Assets\\Textures\\wood.png" - matching library_db::asset::m_Path's own convention), Base64-encoded
 // since real paths contain backslashes/spaces that would otherwise collide with the CLI's own token
-// splitting - same reasoning Name already gets Base64-encoded for in E10_Commands_Assets.h.
+// splitting - same reasoning Name already gets Base64-encoded for in xresource_editor_commands_assets.h.
 //
 // DeleteAssetFileToTrash's own -TrashPath argument is REQUIRED, not auto-computed by Redo() itself:
 // Redo() only ever sees its own command-line arguments (it has no access to whatever
@@ -19,22 +19,22 @@
 // would only decide at call time either) - so the exact trash destination must be pre-minted by the
 // CALLER via library_mgr::ComputeTrashPath BEFORE constructing this command string, the same "-Id
 // pre-minted by the caller" shape CreateAsset/MakePrefab already use for their own Redo-determinism
-// (E10_Commands_Assets.h), just applied to a path instead of a guid. The eventual UI hook
-// (assert_browser's own m_On* callbacks, RegisterAssetBrowserCallbacks) is where that pre-mint call
+// (xresource_editor_commands_assets.h), just applied to a path instead of a guid. The eventual UI hook
+// (asset_browser's own m_On* callbacks, RegisterAssetBrowserCallbacks) is where that pre-mint call
 // belongs, mirroring m_OnCreateAsset's own existing pattern - not built yet as of this pass, CLI-only
 // for now (matches this whole project's own "discovery/CLI first, UI wiring verified last" phasing).
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_CommandGuids.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_command_guids.h"
 #include "dependencies/xundo/source/xundo_system.h"
 #include "dependencies/xeditor/include/xeditor/commands.h"
 #include "dependencies/xeditor/include/xeditor/serialize.h"
 
-namespace e10::commands
+namespace xresource_editor::commands
 {
     inline std::string EncodeAssetPath(const std::wstring& Path) noexcept { return xeditor::Base64Encode(xstrtool::To(Path)); }
     inline std::wstring DecodeAssetPath(const std::string& Encoded) noexcept { return xstrtool::To(xeditor::Base64Decode(Encoded)); }
 
     // "-Force 1" bypasses the dependent-count warning below - the CLI/AI equivalent of clicking
-    // "Continue" on the Asset Tree's own confirmation dialog (E10_asset_browser_files_tab.h's
+    // "Continue" on the Asset Tree's own confirmation dialog (xresource_editor_asset_browser_files_tab.h's
     // StageOrExecute/RenderPendingConfirmationModal), since there is no dialog for a script to click.
     // Direct user request: "Proper Commands should take in a flag to suppress those dialogs... so AI
     // can do its job."
@@ -49,7 +49,7 @@ namespace e10::commands
     // (a rename IS a move within the same folder - there is only one underlying primitive), kept as
     // two separately-named commands purely for discoverability/intent clarity from the CLI or an AI,
     // matching how RenameAsset/MoveAsset already coexist as two names in
-    // E10_Commands_Assets.h. Undo is the exact inverse MoveAssetFile call, old/new swapped - it
+    // xresource_editor_commands_assets.h. Undo is the exact inverse MoveAssetFile call, old/new swapped - it
     // re-cascades back through every dependent's Descriptor.txt exactly like Redo did forward.
     //================================================================================================
     struct rename_asset_file_cmd : xundo::command_base
@@ -78,11 +78,11 @@ namespace e10::commands
 
             if (!IsForced(m_Parser, m_hForce))
             {
-                if (const auto Count = e10::g_LibMgr.CountDependents(LibraryGuid, OldPath); Count > 0)
+                if (const auto Count = xresource_editor::g_LibMgr.CountDependents(LibraryGuid, OldPath); Count > 0)
                     return std::format("RenameAssetFile: {} other resource(s) depend on this - pass -Force 1 to proceed anyway", Count);
             }
 
-            const auto Result = e10::g_LibMgr.MoveAssetFile(LibraryGuid, OldPath, NewPath);
+            const auto Result = xresource_editor::g_LibMgr.MoveAssetFile(LibraryGuid, OldPath, NewPath);
             if (!Result.m_bSuccess) return std::format("RenameAssetFile: {}", Result.m_Error);
             if (!Result.m_FailedDependents.empty()) return std::format("RenameAssetFile: moved, but {} dependent(s) could not be updated - see log", Result.m_FailedDependents.size());
             return {};
@@ -109,7 +109,7 @@ namespace e10::commands
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
             // Undo is the exact inverse move - it re-cascades back through the same files Redo did,
             // so it never needs its own dependent-count check (Force doesn't apply to Undo).
-            e10::g_LibMgr.MoveAssetFile(LibraryGuid, DecodeAssetPath(NewArg), DecodeAssetPath(OldArg));
+            xresource_editor::g_LibMgr.MoveAssetFile(LibraryGuid, DecodeAssetPath(NewArg), DecodeAssetPath(OldArg));
         }
 
         xcmdline::parser::handle m_hLibrary, m_hOldPath, m_hNewPath, m_hForce;
@@ -141,11 +141,11 @@ namespace e10::commands
 
             if (!IsForced(m_Parser, m_hForce))
             {
-                if (const auto Count = e10::g_LibMgr.CountDependents(LibraryGuid, OldPath); Count > 0)
+                if (const auto Count = xresource_editor::g_LibMgr.CountDependents(LibraryGuid, OldPath); Count > 0)
                     return std::format("MoveAssetFile: {} other resource(s) depend on this - pass -Force 1 to proceed anyway", Count);
             }
 
-            const auto Result = e10::g_LibMgr.MoveAssetFile(LibraryGuid, OldPath, NewPath);
+            const auto Result = xresource_editor::g_LibMgr.MoveAssetFile(LibraryGuid, OldPath, NewPath);
             if (!Result.m_bSuccess) return std::format("MoveAssetFile: {}", Result.m_Error);
             if (!Result.m_FailedDependents.empty()) return std::format("MoveAssetFile: moved, but {} dependent(s) could not be updated - see log", Result.m_FailedDependents.size());
             return {};
@@ -172,7 +172,7 @@ namespace e10::commands
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
             // Undo is the exact inverse move - it re-cascades back through the same files Redo did, so
             // it never needs its own dependent-count check (Force doesn't apply to Undo).
-            e10::g_LibMgr.MoveAssetFile(LibraryGuid, DecodeAssetPath(NewArg), DecodeAssetPath(OldArg));
+            xresource_editor::g_LibMgr.MoveAssetFile(LibraryGuid, DecodeAssetPath(NewArg), DecodeAssetPath(OldArg));
         }
 
         xcmdline::parser::handle m_hLibrary, m_hOldPath, m_hNewPath, m_hForce;
@@ -181,7 +181,7 @@ namespace e10::commands
     //================================================================================================
     // DeleteAssetFileToTrash - soft delete, symmetric with RestoreAssetFileFromTrash below. -TrashPath
     // is REQUIRED (see this file's own top comment for why it can't be computed inside Redo() itself) -
-    // call e10::g_LibMgr.ComputeTrashPath(Library, Path) first to get it.
+    // call xresource_editor::g_LibMgr.ComputeTrashPath(Library, Path) first to get it.
     //================================================================================================
     struct delete_asset_file_cmd : xundo::command_base
     {
@@ -209,11 +209,11 @@ namespace e10::commands
 
             if (!IsForced(m_Parser, m_hForce))
             {
-                if (const auto Count = e10::g_LibMgr.CountDependents(LibraryGuid, Path); Count > 0)
+                if (const auto Count = xresource_editor::g_LibMgr.CountDependents(LibraryGuid, Path); Count > 0)
                     return std::format("DeleteAssetFileToTrash: {} other resource(s) depend on this - deleting will leave them pointing at the Trash location. Pass -Force 1 to proceed anyway", Count);
             }
 
-            const auto Result = e10::g_LibMgr.MoveAssetFile(LibraryGuid, Path, TrashPath);
+            const auto Result = xresource_editor::g_LibMgr.MoveAssetFile(LibraryGuid, Path, TrashPath);
             if (!Result.m_bSuccess) return std::format("DeleteAssetFileToTrash: {}", Result.m_Error);
             if (!Result.m_FailedDependents.empty()) return std::format("DeleteAssetFileToTrash: moved, but {} dependent(s) could not be updated - see log", Result.m_FailedDependents.size());
             return {};
@@ -238,7 +238,7 @@ namespace e10::commands
             const std::string TrashArg = xeditor::ReadString(File);
 
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
-            e10::g_LibMgr.MoveAssetFile(LibraryGuid, DecodeAssetPath(TrashArg), DecodeAssetPath(PathArg));
+            xresource_editor::g_LibMgr.MoveAssetFile(LibraryGuid, DecodeAssetPath(TrashArg), DecodeAssetPath(PathArg));
         }
 
         xcmdline::parser::handle m_hLibrary, m_hPath, m_hTrashPath, m_hForce;
@@ -274,7 +274,7 @@ namespace e10::commands
             const auto TrashPath   = DecodeAssetPath(std::get<std::string>(TrashArg));
             const auto OriginalPath = DecodeAssetPath(std::get<std::string>(OriginalArg));
 
-            const auto Result = e10::g_LibMgr.MoveAssetFile(LibraryGuid, TrashPath, OriginalPath);
+            const auto Result = xresource_editor::g_LibMgr.MoveAssetFile(LibraryGuid, TrashPath, OriginalPath);
             if (!Result.m_bSuccess) return std::format("RestoreAssetFileFromTrash: {}", Result.m_Error);
             if (!Result.m_FailedDependents.empty()) return std::format("RestoreAssetFileFromTrash: moved, but {} dependent(s) could not be updated - see log", Result.m_FailedDependents.size());
             return {};
@@ -299,7 +299,7 @@ namespace e10::commands
             const std::string OriginalArg = xeditor::ReadString(File);
 
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
-            e10::g_LibMgr.MoveAssetFile(LibraryGuid, DecodeAssetPath(OriginalArg), DecodeAssetPath(TrashArg));
+            xresource_editor::g_LibMgr.MoveAssetFile(LibraryGuid, DecodeAssetPath(OriginalArg), DecodeAssetPath(TrashArg));
         }
 
         xcmdline::parser::handle m_hLibrary, m_hTrashPath, m_hOriginalPath;
@@ -337,7 +337,7 @@ namespace e10::commands
             const auto SourcePath  = DecodeAssetPath(std::get<std::string>(SourceArg));
             const auto NewPath     = DecodeAssetPath(std::get<std::string>(NewArg));
 
-            const auto Result = e10::g_LibMgr.CopyAssetFile(LibraryGuid, SourcePath, NewPath);
+            const auto Result = xresource_editor::g_LibMgr.CopyAssetFile(LibraryGuid, SourcePath, NewPath);
             if (!Result.m_bSuccess) return std::format("CopyAssetFile: {}", Result.m_Error);
             return {};
         }
@@ -359,12 +359,12 @@ namespace e10::commands
 
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
             const auto NewPath     = DecodeAssetPath(NewArg);
-            const auto TrashPath   = e10::g_LibMgr.ComputeTrashPath(LibraryGuid, NewPath);
-            e10::g_LibMgr.MoveAssetFile(LibraryGuid, NewPath, TrashPath);
+            const auto TrashPath   = xresource_editor::g_LibMgr.ComputeTrashPath(LibraryGuid, NewPath);
+            xresource_editor::g_LibMgr.MoveAssetFile(LibraryGuid, NewPath, TrashPath);
         }
 
         xcmdline::parser::handle m_hLibrary, m_hSourcePath, m_hNewPath;
     };
 }
 
-#endif // E10_COMMANDS_ASSET_FILES_H
+#endif // XRESOURCE_EDITOR_COMMANDS_ASSET_FILES_H

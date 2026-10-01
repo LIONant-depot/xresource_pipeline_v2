@@ -1,5 +1,5 @@
-#ifndef E10_COMMANDS_ASSET_BROWSER_H
-#define E10_COMMANDS_ASSET_BROWSER_H
+#ifndef XRESOURCE_EDITOR_COMMANDS_ASSET_BROWSER_H
+#define XRESOURCE_EDITOR_COMMANDS_ASSET_BROWSER_H
 #pragma once
 
 // Asset Browser command/undo layer - the foundation Make Prefab was deliberately left out of the
@@ -7,9 +7,9 @@
 // AssetMgr.NewAsset to create a real Prefab asset on disk, and no command in this system had ever had
 // to reverse an asset-library creation. Direct user framing: "I think make prefab or create prefab
 // instance may depend on the asset browser... We need to make it work with commands as well so it
-// can be added into a global undo system." This file wraps e10::library_mgr's own real mutation
-// primitives (E10_AssetMgr.h) as thin xundo commands - not modifying library_mgr itself, so the other
-// 7 examples that embed the same Asset Browser (E10, E19-E21, E23-E25, E28) are unaffected.
+// can be added into a global undo system." This file wraps xresource_editor::library_mgr's own real mutation
+// primitives (xresource_editor_asset_mgr.h) as thin xundo commands - not modifying library_mgr itself, so the other
+// 7 examples that embed the same Asset Browser (xresource_editor, E19-E21, E23-E25, E28) are unaffected.
 //
 // Every real mutation lives in library_mgr: NewAsset (writes info.txt to disk immediately + inserts
 // into the in-memory tree), RenameDescriptor/MoveDescriptor/MoveToTrash/MoveFromTrashTo (in-memory
@@ -24,23 +24,23 @@
 // type), so it needs both halves on the command line - see ParseAssetGuid/FormatAssetGuid
 // (E29_CommandContext.h), 32 hex digits (16 instance + 16 type) as one token, same "one guid, one
 // argument" shape every other guid convention here already has.
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_CommandGuids.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_command_guids.h"
 #include "dependencies/xundo/source/xundo_system.h"
 #include "dependencies/xeditor/include/xeditor/commands.h"
 #include "dependencies/xeditor/include/xeditor/serialize.h"
 
-namespace e10::commands
+namespace xresource_editor::commands
 {
-    // The root folder for a given Library - e10::library_mgr's own convention (E10_AssetMgr.h,
+    // The root folder for a given Library - xresource_editor::library_mgr's own convention (xresource_editor_asset_mgr.h,
     // OpenProject: `RootGUID = { m_ProjectGUID.m_Instance, folder::type_guid_v }`) is that a
     // library's root folder shares its OWN instance value, just tagged as a folder-type asset instead
     // of a library. Used as ListAssets' own default -Parent, so a fresh AI/CLI session can discover
     // the whole tree starting from nothing but a Library guid (ListLevels/ListScenes's own already-
     // known guids would otherwise be the only bootstrap, which begs the question for anything that
     // ISN'T a Level/Scene).
-    inline xresource::full_guid LibraryRootFolderGuid(e10::library::guid LibraryGuid) noexcept
+    inline xresource::full_guid LibraryRootFolderGuid(xresource_editor::library::guid LibraryGuid) noexcept
     {
-        return xresource::full_guid{ .m_Instance = LibraryGuid.m_Instance, .m_Type = e10::folder::type_guid_v };
+        return xresource::full_guid{ .m_Instance = LibraryGuid.m_Instance, .m_Type = xresource_editor::folder::type_guid_v };
     }
 
     //================================================================================================
@@ -81,26 +81,26 @@ namespace e10::commands
             // asking to list the trash folder itself) so a listing doesn't show a deleted asset as
             // still present in two places at once - same "front of m_RscLinks is the trash tag" check
             // MoveToTrash's own source establishes as the trashed-or-not signal.
-            const bool bListingTrash = ParentGuid == e10::folder::trash_guid_v;
-            const bool bFound = e10::g_LibMgr.getNodeInfo(LibraryGuid, ParentGuid, [&](const e10::library_db::info_node& Node)
+            const bool bListingTrash = ParentGuid == xresource_editor::folder::trash_guid_v;
+            const bool bFound = xresource_editor::g_LibMgr.getNodeInfo(LibraryGuid, ParentGuid, [&](const xresource_editor::library_db::info_node& Node)
             {
                 for (auto& Child : Node.m_lChildLinks)
                 {
                     if (!bListingTrash)
                     {
                         bool bIsTrashed = false;
-                        e10::g_LibMgr.getInfo(LibraryGuid, Child, [&](const xresource_pipeline::info& Info)
+                        xresource_editor::g_LibMgr.getInfo(LibraryGuid, Child, [&](const xresource_pipeline::info& Info)
                         {
-                            bIsTrashed = !Info.m_RscLinks.empty() && Info.m_RscLinks.front() == e10::folder::trash_guid_v;
+                            bIsTrashed = !Info.m_RscLinks.empty() && Info.m_RscLinks.front() == xresource_editor::folder::trash_guid_v;
                         });
                         if (bIsTrashed) continue;
                     }
 
                     std::string TypeName = std::format("{:016X}", Child.m_Type.m_Value);
-                    if (auto* pPlugin = e10::g_LibMgr.m_AssetPluginsDB.find(Child.m_Type)) TypeName = pPlugin->m_TypeName;
+                    if (auto* pPlugin = xresource_editor::g_LibMgr.m_AssetPluginsDB.find(Child.m_Type)) TypeName = pPlugin->m_TypeName;
 
                     std::string Name = "(unnamed)";
-                    e10::g_LibMgr.getInfo(LibraryGuid, Child, [&](const xresource_pipeline::info& Info) { Name = Info.m_Name; });
+                    xresource_editor::g_LibMgr.getInfo(LibraryGuid, Child, [&](const xresource_pipeline::info& Info) { Name = Info.m_Name; });
 
                     Out += std::format("{}  {}  {}\n", FormatAssetGuid(Child), TypeName, Name);
                 }
@@ -138,7 +138,7 @@ namespace e10::commands
             const auto AssetGuid   = ParseAssetGuid(std::get<std::string>(AssetArg));
 
             std::string Out;
-            const bool bFound = e10::g_LibMgr.getNodeInfo(LibraryGuid, AssetGuid, [&](const e10::library_db::info_node& Node) // deliberately not noexcept - see ListAssets' own comment
+            const bool bFound = xresource_editor::g_LibMgr.getNodeInfo(LibraryGuid, AssetGuid, [&](const xresource_editor::library_db::info_node& Node) // deliberately not noexcept - see ListAssets' own comment
             {
                 Out += std::format("Name: {}\n", Node.m_Info.m_Name);
                 Out += std::format("Type: {:016X}\n", AssetGuid.m_Type.m_Value);
@@ -187,7 +187,7 @@ namespace e10::commands
             const auto AssetGuid   = ParseAssetGuid(std::get<std::string>(AssetArg));
             const auto Name        = xeditor::Base64Decode(std::get<std::string>(NameArg));
 
-            if (auto Err = e10::g_LibMgr.RenameDescriptor(LibraryGuid, AssetGuid, Name); Err)
+            if (auto Err = xresource_editor::g_LibMgr.RenameDescriptor(LibraryGuid, AssetGuid, Name); Err)
                 return std::format("RenameAsset: {}", Err.getMessage());
             return {};
         }
@@ -207,7 +207,7 @@ namespace e10::commands
             {
                 const auto LibraryGuid = ParseLibraryGuid(std::get<std::string>(LibraryArg));
                 const auto AssetGuid   = ParseAssetGuid(std::get<std::string>(AssetArg));
-                e10::g_LibMgr.getInfo(LibraryGuid, AssetGuid, [&](const xresource_pipeline::info& Info) { OldName = Info.m_Name; });
+                xresource_editor::g_LibMgr.getInfo(LibraryGuid, AssetGuid, [&](const xresource_pipeline::info& Info) { OldName = Info.m_Name; });
             }
             xeditor::WriteString(File, OldName);
         }
@@ -220,7 +220,7 @@ namespace e10::commands
 
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
             const auto AssetGuid   = ParseAssetGuid(Asset);
-            e10::g_LibMgr.RenameDescriptor(LibraryGuid, AssetGuid, OldName);
+            xresource_editor::g_LibMgr.RenameDescriptor(LibraryGuid, AssetGuid, OldName);
         }
 
         xcmdline::parser::handle m_hLibrary, m_hAsset, m_hName;
@@ -257,7 +257,7 @@ namespace e10::commands
             const auto OldParent   = ParseAssetGuid(std::get<std::string>(OldParentArg));
             const auto NewParent   = ParseAssetGuid(std::get<std::string>(NewParentArg));
 
-            if (auto Err = e10::g_LibMgr.MoveDescriptor(LibraryGuid, AssetGuid, OldParent, NewParent); Err)
+            if (auto Err = xresource_editor::g_LibMgr.MoveDescriptor(LibraryGuid, AssetGuid, OldParent, NewParent); Err)
                 return std::format("MoveAsset: {}", Err.getMessage());
             return {};
         }
@@ -288,7 +288,7 @@ namespace e10::commands
             const std::string NewParent = xeditor::ReadString(File);
 
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
-            e10::g_LibMgr.MoveDescriptor(LibraryGuid, ParseAssetGuid(Asset), ParseAssetGuid(NewParent), ParseAssetGuid(OldParent));
+            xresource_editor::g_LibMgr.MoveDescriptor(LibraryGuid, ParseAssetGuid(Asset), ParseAssetGuid(NewParent), ParseAssetGuid(OldParent));
         }
 
         xcmdline::parser::handle m_hLibrary, m_hAsset, m_hOldParent, m_hNewParent;
@@ -321,7 +321,7 @@ namespace e10::commands
             const auto LibraryGuid = ParseLibraryGuid(std::get<std::string>(LibraryArg));
             const auto AssetGuid   = ParseAssetGuid(std::get<std::string>(AssetArg));
 
-            if (auto Err = e10::g_LibMgr.MoveToTrash(LibraryGuid, AssetGuid); !Err.empty())
+            if (auto Err = xresource_editor::g_LibMgr.MoveToTrash(LibraryGuid, AssetGuid); !Err.empty())
                 return std::format("DeleteAsset: {}", Err);
             return {};
         }
@@ -342,7 +342,7 @@ namespace e10::commands
             {
                 const auto LibraryGuid = ParseLibraryGuid(std::get<std::string>(LibraryArg));
                 const auto AssetGuid   = ParseAssetGuid(std::get<std::string>(AssetArg));
-                e10::g_LibMgr.getInfo(LibraryGuid, AssetGuid, [&](const xresource_pipeline::info& Info)
+                xresource_editor::g_LibMgr.getInfo(LibraryGuid, AssetGuid, [&](const xresource_pipeline::info& Info)
                 {
                     if (!Info.m_RscLinks.empty()) OldParent = FormatAssetGuid(Info.m_RscLinks.front());
                 });
@@ -357,7 +357,7 @@ namespace e10::commands
             const std::string OldParent = xeditor::ReadString(File);
 
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
-            e10::g_LibMgr.MoveFromTrashTo(LibraryGuid, ParseAssetGuid(Asset), ParseAssetGuid(OldParent));
+            xresource_editor::g_LibMgr.MoveFromTrashTo(LibraryGuid, ParseAssetGuid(Asset), ParseAssetGuid(OldParent));
         }
 
         xcmdline::parser::handle m_hLibrary, m_hAsset;
@@ -394,7 +394,7 @@ namespace e10::commands
             const auto AssetGuid   = ParseAssetGuid(std::get<std::string>(AssetArg));
             const auto ParentGuid  = ParseAssetGuid(std::get<std::string>(ParentArg));
 
-            if (auto Err = e10::g_LibMgr.MoveFromTrashTo(LibraryGuid, AssetGuid, ParentGuid); !Err.empty())
+            if (auto Err = xresource_editor::g_LibMgr.MoveFromTrashTo(LibraryGuid, AssetGuid, ParentGuid); !Err.empty())
                 return std::format("RestoreAsset: {}", Err);
             return {};
         }
@@ -415,7 +415,7 @@ namespace e10::commands
             const std::string Asset = xeditor::ReadString(File);
 
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
-            e10::g_LibMgr.MoveToTrash(LibraryGuid, ParseAssetGuid(Asset));
+            xresource_editor::g_LibMgr.MoveToTrash(LibraryGuid, ParseAssetGuid(Asset));
         }
 
         xcmdline::parser::handle m_hLibrary, m_hAsset, m_hParent;
@@ -434,20 +434,20 @@ namespace e10::commands
     // itself only ever in-memory and never saved - nothing left to do). Calling MoveFromTrashTo on a
     // non-trashed node hits its own `m_RscLinks[0] == trash_guid_v` assert - confirmed live, twice
     // (once for CreateAsset, once for MakePrefab, before this got factored out).
-    inline void CreateOrRestoreAsset(e10::library::guid LibraryGuid, xresource::full_guid AssetGuid, xresource::full_guid ParentGuid, const std::string& Name) noexcept
+    inline void CreateOrRestoreAsset(xresource_editor::library::guid LibraryGuid, xresource::full_guid AssetGuid, xresource::full_guid ParentGuid, const std::string& Name) noexcept
     {
         bool bAlreadyExists = false;
         bool bCurrentlyTrashed = false;
-        e10::g_LibMgr.getInfo(LibraryGuid, AssetGuid, [&](const xresource_pipeline::info& Info)
+        xresource_editor::g_LibMgr.getInfo(LibraryGuid, AssetGuid, [&](const xresource_pipeline::info& Info)
         {
             bAlreadyExists = true;
-            bCurrentlyTrashed = !Info.m_RscLinks.empty() && Info.m_RscLinks.front() == e10::folder::trash_guid_v;
+            bCurrentlyTrashed = !Info.m_RscLinks.empty() && Info.m_RscLinks.front() == xresource_editor::folder::trash_guid_v;
         });
 
         if (bAlreadyExists && bCurrentlyTrashed)
-            e10::g_LibMgr.MoveFromTrashTo(LibraryGuid, AssetGuid, ParentGuid);
+            xresource_editor::g_LibMgr.MoveFromTrashTo(LibraryGuid, AssetGuid, ParentGuid);
         else if (!bAlreadyExists)
-            e10::g_LibMgr.NewAsset(LibraryGuid, AssetGuid, ParentGuid, Name);
+            xresource_editor::g_LibMgr.NewAsset(LibraryGuid, AssetGuid, ParentGuid, Name);
         // else: already exists, not trashed - nothing left to do, matches CreateAsset's own comment.
     }
 
@@ -516,7 +516,7 @@ namespace e10::commands
             const std::string Asset = xeditor::ReadString(File);
 
             const auto LibraryGuid = ParseLibraryGuid(std::format("{:016X}", Library));
-            e10::g_LibMgr.MoveToTrash(LibraryGuid, ParseAssetGuid(Asset));
+            xresource_editor::g_LibMgr.MoveToTrash(LibraryGuid, ParseAssetGuid(Asset));
         }
 
         xcmdline::parser::handle m_hLibrary, m_hType, m_hAsset, m_hParent, m_hName;
@@ -538,10 +538,10 @@ namespace e10::commands
         std::string Query() noexcept override
         {
             xproperty::settings::context Context;
-            e10::g_LibMgr.Save(Context);
+            xresource_editor::g_LibMgr.Save(Context);
             return "Saved";
         }
     };
 }
 
-#endif // E10_COMMANDS_ASSET_BROWSER_H
+#endif // XRESOURCE_EDITOR_COMMANDS_ASSET_BROWSER_H

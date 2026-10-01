@@ -1,24 +1,24 @@
-#ifndef E10_COMMANDS_COMPILATION_H
-#define E10_COMMANDS_COMPILATION_H
+#ifndef XRESOURCE_EDITOR_COMMANDS_COMPILATION_H
+#define XRESOURCE_EDITOR_COMMANDS_COMPILATION_H
 #pragma once
 
 // Compilation command layer - direct user request after a long live-debugging session on the
 // Compilation view's Pause/Resume/Recompile buttons: "you should add commands from the compilation
 // so that you can trigger what you need without going through the UI." Every command here is a thin
-// wrapper over e10::library_mgr::m_Compilation (E10_AssetMgr.h) - same "wrap the real primitive,
+// wrapper over xresource_editor::library_mgr::m_Compilation (xresource_editor_asset_mgr.h) - same "wrap the real primitive,
 // don't reinvent it" shape every other command file in this folder already uses. None of these are
 // undoable (matching Play/Pause/Stop's own precedent, E29_Commands_PlaySession.h) - pausing/resuming/
 // recompiling the asset pipeline has no meaningful "undo" the way an entity edit does.
-#include "dependencies/xresource_pipeline_v2/source/editor/E10_CommandGuids.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_command_guids.h"
 #include "dependencies/xundo/source/xundo_system.h"
 #include "dependencies/xeditor/include/xeditor/commands.h"
 #include "dependencies/xeditor/include/xeditor/serialize.h"
 
-namespace e10::commands
+namespace xresource_editor::commands
 {
     //================================================================================================
     // RecompileAll - force every resource, in every open library, back into the compilation queue.
-    // Thin wrap of library_mgr::RecompileAllResources() (E10_AssetMgr.h).
+    // Thin wrap of library_mgr::RecompileAllResources() (xresource_editor_asset_mgr.h).
     //================================================================================================
     struct recompile_all_query_cmd : xundo::query_command_base
     {
@@ -27,7 +27,7 @@ namespace e10::commands
         void RegisterArguments() noexcept override {}
         std::string Query() noexcept override
         {
-            e10::g_LibMgr.RecompileAllResources();
+            xresource_editor::g_LibMgr.RecompileAllResources();
             return "RecompileAll: requeued";
         }
     };
@@ -43,7 +43,7 @@ namespace e10::commands
         void RegisterArguments() noexcept override {}
         std::string Query() noexcept override
         {
-            e10::g_LibMgr.RecompileFailedResources();
+            xresource_editor::g_LibMgr.RecompileFailedResources();
             return "RecompileErrors: requeued";
         }
     };
@@ -51,7 +51,7 @@ namespace e10::commands
     //================================================================================================
     // CompileStart - manual trigger, same as the toolbar's own "Compile" button when Auto-Compile is
     // off. StartCompilation() is itself a safe no-op if a compile is already running (compare_exchange
-    // guard) - see its own comment in E10_AssetMgr.h.
+    // guard) - see its own comment in xresource_editor_asset_mgr.h.
     //================================================================================================
     struct compile_start_query_cmd : xundo::query_command_base
     {
@@ -60,7 +60,7 @@ namespace e10::commands
         void RegisterArguments() noexcept override {}
         std::string Query() noexcept override
         {
-            e10::g_LibMgr.m_Compilation.StartCompilation();
+            xresource_editor::g_LibMgr.m_Compilation.StartCompilation();
             return "CompileStart: requested";
         }
     };
@@ -69,7 +69,7 @@ namespace e10::commands
     // CompilePause - -State true/false. Mirrors the Pause button's own click handler exactly,
     // including the live-found fix: resuming (false, from a previously-true state) must also call
     // StartCompilation() itself, or the queue just sits there - flipping the flag alone was never
-    // enough (see PauseCompilation's own call site in E10_asset_browser_compiler_tab.h).
+    // enough (see PauseCompilation's own call site in xresource_editor_asset_browser_compiler_tab.h).
     //================================================================================================
     struct compile_pause_query_cmd : xundo::query_command_base
     {
@@ -86,9 +86,9 @@ namespace e10::commands
             const std::string& S = std::get<std::string>(StateArg);
             const bool bPause = (S == "true" || S == "1");
 
-            const bool bWasPaused = e10::g_LibMgr.m_Compilation.m_PauseCompilation.load();
-            e10::g_LibMgr.m_Compilation.PauseCompilation(bPause);
-            if (bWasPaused && !bPause) e10::g_LibMgr.m_Compilation.StartCompilation();
+            const bool bWasPaused = xresource_editor::g_LibMgr.m_Compilation.m_PauseCompilation.load();
+            xresource_editor::g_LibMgr.m_Compilation.PauseCompilation(bPause);
+            if (bWasPaused && !bPause) xresource_editor::g_LibMgr.m_Compilation.StartCompilation();
             return bPause ? "CompilePause: paused" : "CompilePause: resumed";
         }
         xcmdline::parser::handle m_hState;
@@ -113,9 +113,9 @@ namespace e10::commands
             const std::string& S = std::get<std::string>(StateArg);
             const bool bAuto = (S == "true" || S == "1");
 
-            const bool bWasAuto = e10::g_LibMgr.m_Compilation.m_AutoCompilation.load();
-            e10::g_LibMgr.m_Compilation.m_AutoCompilation.store(bAuto);
-            if (!bWasAuto && bAuto) e10::g_LibMgr.m_Compilation.StartCompilation();
+            const bool bWasAuto = xresource_editor::g_LibMgr.m_Compilation.m_AutoCompilation.load();
+            xresource_editor::g_LibMgr.m_Compilation.m_AutoCompilation.store(bAuto);
+            if (!bWasAuto && bAuto) xresource_editor::g_LibMgr.m_Compilation.StartCompilation();
             return bAuto ? "CompileAuto: on" : "CompileAuto: off";
         }
         xcmdline::parser::handle m_hState;
@@ -134,14 +134,14 @@ namespace e10::commands
         void RegisterArguments() noexcept override {}
         std::string Query() noexcept override
         {
-            auto& Compilation = e10::g_LibMgr.m_Compilation;
+            auto& Compilation = xresource_editor::g_LibMgr.m_Compilation;
 
             std::size_t Compiling = 0;
             { std::lock_guard Lk(Compilation.m_Compiling.m_Mutex); Compiling = Compilation.m_Compiling.m_List.size(); }
 
             std::string WaitingPerLevel;
             std::size_t WaitingTotal = 0;
-            std::vector<std::pair<int, e10::compilation::entry>> WaitingEntries; // (level, entry) - names resolved AFTER releasing m_Queue's lock, never nested inside it
+            std::vector<std::pair<int, xresource_editor::compilation::entry>> WaitingEntries; // (level, entry) - names resolved AFTER releasing m_Queue's lock, never nested inside it
             {
                 xcontainer::lock::scope Lk(Compilation.m_Queue);
                 int iLevel = 0;
@@ -163,7 +163,7 @@ namespace e10::commands
             for (auto& [Level, E] : WaitingEntries)
             {
                 std::string Name = "(unnamed)";
-                e10::g_LibMgr.getNodeInfo(E.m_gLibrary, E.m_FullGuid, [&](const e10::library_db::info_node& Node)
+                xresource_editor::g_LibMgr.getNodeInfo(E.m_gLibrary, E.m_FullGuid, [&](const xresource_editor::library_db::info_node& Node)
                 {
                     Name = Node.m_Info.m_Name;
                     WaitingNames += std::format(" [L{}:{} guid={:016X} ResourceTime=-{}s DescriptorTime=-{}s NewestDependencyTime=-{}s]"
@@ -189,4 +189,4 @@ namespace e10::commands
     };
 }
 
-#endif // E10_COMMANDS_COMPILATION_H
+#endif // XRESOURCE_EDITOR_COMMANDS_COMPILATION_H
