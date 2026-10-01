@@ -82,29 +82,34 @@ namespace xresource_editor::commands
             // still present in two places at once - same "front of m_RscLinks is the trash tag" check
             // MoveToTrash's own source establishes as the trashed-or-not signal.
             const bool bListingTrash = ParentGuid == xresource_editor::folder::trash_guid_v;
+
+            // The children are copied out and visited AFTER getNodeInfo returns: getInfo reads the same maps again, and reading a map from inside one
+            // of its own read callbacks deadlocks once another thread is queued to write it.
+            decltype(xresource_editor::library_db::info_node::m_lChildLinks) Children;
             const bool bFound = xresource_editor::g_LibMgr.getNodeInfo(LibraryGuid, ParentGuid, [&](const xresource_editor::library_db::info_node& Node)
             {
-                for (auto& Child : Node.m_lChildLinks)
-                {
-                    if (!bListingTrash)
-                    {
-                        bool bIsTrashed = false;
-                        xresource_editor::g_LibMgr.getInfo(LibraryGuid, Child, [&](const xresource_pipeline::info& Info)
-                        {
-                            bIsTrashed = !Info.m_RscLinks.empty() && Info.m_RscLinks.front() == xresource_editor::folder::trash_guid_v;
-                        });
-                        if (bIsTrashed) continue;
-                    }
-
-                    std::string TypeName = std::format("{:016X}", Child.m_Type.m_Value);
-                    if (auto* pPlugin = xresource_editor::g_LibMgr.m_AssetPluginsDB.find(Child.m_Type)) TypeName = pPlugin->m_TypeName;
-
-                    std::string Name = "(unnamed)";
-                    xresource_editor::g_LibMgr.getInfo(LibraryGuid, Child, [&](const xresource_pipeline::info& Info) { Name = Info.m_Name; });
-
-                    Out += std::format("{}  {}  {}\n", FormatAssetGuid(Child), TypeName, Name);
-                }
+                Children = Node.m_lChildLinks;
             });
+            for (auto& Child : Children)
+            {
+                if (!bListingTrash)
+                {
+                    bool bIsTrashed = false;
+                    xresource_editor::g_LibMgr.getInfo(LibraryGuid, Child, [&](const xresource_pipeline::info& Info)
+                    {
+                        bIsTrashed = !Info.m_RscLinks.empty() && Info.m_RscLinks.front() == xresource_editor::folder::trash_guid_v;
+                    });
+                    if (bIsTrashed) continue;
+                }
+
+                std::string TypeName = std::format("{:016X}", Child.m_Type.m_Value);
+                if (auto* pPlugin = xresource_editor::g_LibMgr.m_AssetPluginsDB.find(Child.m_Type)) TypeName = pPlugin->m_TypeName;
+
+                std::string Name = "(unnamed)";
+                xresource_editor::g_LibMgr.getInfo(LibraryGuid, Child, [&](const xresource_pipeline::info& Info) { Name = Info.m_Name; });
+
+                Out += std::format("{}  {}  {}\n", FormatAssetGuid(Child), TypeName, Name);
+            }
             if (!bFound) return "ListAssets: parent not found";
             return Out;
         }

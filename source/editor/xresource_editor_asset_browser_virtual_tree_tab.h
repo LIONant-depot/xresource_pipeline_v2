@@ -1079,6 +1079,9 @@ namespace xresource_editor
                     {
                         std::function<void(const xresource_editor::folder::guid&, const xresource_editor::folder::guid&, folder&)> CollectFolders = [&](const xresource_editor::folder::guid& GUID, const xresource_editor::folder::guid& ParentGUID, folder& Folder )
                         {
+                            // The child folders are only noted inside the callback and walked after it returns: reading this map again from inside
+                            // its own read callback (which is what recursing here would do) deadlocks once another thread is queued to write it.
+                            std::vector<xresource::full_guid> ChildFolders;
                             const bool bFoundInstance = Entry->m_InfoDataBase.FindAsReadOnly(GUID.m_Instance, [&](const xresource_editor::library_db::info_node& InfoEntry)
                             {
                                 Folder.m_Guid.m_Instance    = GUID.m_Instance;
@@ -1116,13 +1119,15 @@ namespace xresource_editor
                                         // We only care about folders here
                                         if (ChildGuid.m_Type == xresource_editor::folder::type_guid_v)
                                         {
-                                            CollectFolders({ChildGuid.m_Instance}, GUID, Folder.m_Children.emplace_back());
+                                            ChildFolders.push_back(ChildGuid);
                                         }
                                     }
                                 }
                             });
 
                             assert(bFoundInstance);
+                            for (const auto& ChildGuid : ChildFolders)
+                                CollectFolders({ChildGuid.m_Instance}, GUID, Folder.m_Children.emplace_back());
                         };
 
                         CollectFolders({ L.first.m_Instance }, {}, RootFolder);
