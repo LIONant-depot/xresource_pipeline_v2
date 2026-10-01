@@ -14,6 +14,7 @@
 // Same self-sufficiency convention as every other kit/E29_Panel_*.h (see E29_Panel_LevelTree.h's own
 // top comment) - includes what it names rather than relying on a distant caller's include order.
 #include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_commands_source_control.h"
+#include "dependencies/xeditor/include/xeditor/hint.h"
 #include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_source_control_cache.h"
 #include <cmath>
 #include <unordered_set>
@@ -1216,7 +1217,7 @@ namespace xresource_editor
             {
                 const char* Title = ""; const char* Desc = "";
                 xresource_editor::GetSourceControlTooltipText(StatusBadge, LockBadge, Title, Desc);
-                ImGui::BeginTooltip();
+                xeditor::hint::PlaceAwayFromEdges(16.0f, ImVec2(380.0f, 220.0f)); ImGui::BeginTooltip();
                 ImGui::Text("%s", Title);
                 ImGui::TextDisabled("%s", Desc);
                 ImGui::EndTooltip();
@@ -1308,7 +1309,7 @@ namespace xresource_editor
             xresource_editor::DrawPadlockShape(ImGui::GetWindowDrawList(), Center, 11.0f, IM_COL32(180, 180, 185, 255));
             if (ImGui::IsItemHovered())
             {
-                ImGui::BeginTooltip();
+                xeditor::hint::PlaceAwayFromEdges(16.0f, ImVec2(380.0f, 220.0f)); ImGui::BeginTooltip();
                 ImGui::Text("Source Control");
                 ImGui::TextDisabled("Tracked/untracked/modified status, and lock ownership");
                 ImGui::EndTooltip();
@@ -2079,7 +2080,7 @@ namespace xresource_editor
             ImGui::Dummy(ImVec2(R * 2.0f + 4.0f, LineH));
             if (ImGui::IsItemHovered())
             {
-                ImGui::BeginTooltip();
+                xeditor::hint::PlaceAwayFromEdges(16.0f, ImVec2(380.0f, 220.0f)); ImGui::BeginTooltip();
                 ImGui::Text("Scanning for changes...");
                 ImGui::TextDisabled("The list below may still be filling in.");
                 ImGui::EndTooltip();

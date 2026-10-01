@@ -2,6 +2,7 @@
 #define _XRESOURCE_EDITOR_ASSETBROWSER_H
 #pragma once
 #include "dependencies/xeditor/include/xeditor/widgets.h"
+#include "dependencies/xeditor/include/xeditor/hint.h"
 #include <cstring>
 #include "source/Tools/xgpu_imgui_breach.h"
 #include "source/Tools/xgpu_xcore_bitmap_helpers.h"
@@ -167,31 +168,9 @@ namespace xresource_editor
     // actually end" in this app - querying Win32 directly for the monitor under the cursor is the only
     // reliable option. (This file already uses raw Win32 elsewhere in this codebase for exactly this
     // reason - not a new precedent.)
-    inline void PlaceTooltipAwayFromEdges() noexcept
-    {
-        constexpr ImVec2 AssumedSize(480.0f, 400.0f);
-
-        const ImVec2 MouseF = ImGui::GetIO().MousePos;
-        const POINT  Mouse{ static_cast<LONG>(MouseF.x), static_cast<LONG>(MouseF.y) };
-        const HMONITOR hMonitor = ::MonitorFromPoint(Mouse, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO MonitorInfo{ sizeof(MONITORINFO) };
-        ::GetMonitorInfo(hMonitor, &MonitorInfo);
-
-        const float SpaceRight = static_cast<float>(MonitorInfo.rcWork.right)  - MouseF.x;
-        const float SpaceLeft  = MouseF.x - static_cast<float>(MonitorInfo.rcWork.left);
-        const float SpaceBelow = static_cast<float>(MonitorInfo.rcWork.bottom) - MouseF.y;
-        const float SpaceAbove = MouseF.y - static_cast<float>(MonitorInfo.rcWork.top);
-
-        const ImVec2 Pivot
-        ( (SpaceRight < AssumedSize.x && SpaceLeft  > SpaceRight) ? 1.0f : 0.0f
-        , (SpaceBelow < AssumedSize.y && SpaceAbove > SpaceBelow) ? 1.0f : 0.0f
-        );
-        // Small offset matching ImGui's own default tooltip placement, signed to lead AWAY from the
-        // edge the pivot just chose (e.g. pivot 1.0 on the right edge subtracts, so the window still
-        // clears the cursor instead of sitting under/on top of it).
-        constexpr float Offset = 16.0f;
-        ImGui::SetNextWindowPos(ImVec2(MouseF.x + (Pivot.x > 0.0f ? -Offset : Offset), MouseF.y + (Pivot.y > 0.0f ? -Offset : Offset)), ImGuiCond_Always, Pivot);
-    }
+    // One implementation for every tooltip of the editors: xeditor::hint::PlaceAwayFromEdges (xeditor/hint.h), which asks Win32 for the monitor
+    // the cursor is on. (This file used to carry its own copy of that code.)
+    inline void PlaceTooltipAwayFromEdges() noexcept { xeditor::hint::PlaceAwayFromEdges(16.0f, ImVec2(480.0f, 400.0f)); }
 
     //------------------------------------------------------------------------------------------------
     // The GPU-upload half of the plugin icon atlas - deliberately NOT in xresource_editor_plugin_mgr.h/
@@ -1288,6 +1267,17 @@ namespace xresource_editor
             std::function<void(xproperty::inspector&)> m_OnRenderRightPanel;
         };
         std::vector<extra_tree_section> m_ExtraPluginTabSections = {};
+
+        // A host that offers the Assets tab's file keys (F2, Ctrl+X/C/V, Delete) as its own actions - so they are listed, rebindable and
+        // shown in menus - sets this and the tab stops reading those keys itself. Left false (xGPU's examples), the tab handles them as before.
+        bool                                m_bFileKeysByHost       = false;
+
+        // The browser's tab of this type (the Assets tab is a files_tab), or null.
+        template<typename T_TAB> T_TAB* FindTab() noexcept
+        {
+            for (auto& pTab : m_Tabs) if (auto* p = dynamic_cast<T_TAB*>(pTab.get())) return p;
+            return nullptr;
+        }
     };
 
 } // namespace xresource_editor

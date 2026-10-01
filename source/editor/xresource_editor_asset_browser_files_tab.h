@@ -2,6 +2,8 @@
 #define XRESOURCE_EDITOR_ASSET_BROWSER_FILES_TAB_H
 #pragma once
 
+#include "dependencies/xeditor/include/xeditor/shortcuts.h"
+#include "dependencies/xeditor/include/xeditor/hint.h"
 #include <unordered_set>
 #include <array>
 #include <cstring>
@@ -1155,16 +1157,16 @@ namespace xresource_editor
                 // (it's the library's own fixed folder), but CAN still receive a paste.
                 if (ImGui::BeginPopupContextItem())
                 {
-                    if (ImGui::MenuItem("Rename", "F2", false, !bIsRoot))
+                    if (ImGui::MenuItem("Rename", xeditor::ShortcutText("Assets/Rename", "F2").c_str(), false, !bIsRoot))
                         StartRename(LibraryGuid, RelPath);
-                    if (ImGui::MenuItem("Cut", "Ctrl+X", false, !bIsRoot))
+                    if (ImGui::MenuItem("Cut", xeditor::ShortcutText("Assets/Cut", "Ctrl+X").c_str(), false, !bIsRoot))
                         CutSingle(LibraryGuid, RelPath);
-                    if (ImGui::MenuItem("Copy", "Ctrl+C", false, !bIsRoot))
+                    if (ImGui::MenuItem("Copy", xeditor::ShortcutText("Assets/Copy", "Ctrl+C").c_str(), false, !bIsRoot))
                         CopySingle(LibraryGuid, RelPath);
-                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_Clipboard.empty()))
+                    if (ImGui::MenuItem("Paste", xeditor::ShortcutText("Assets/Paste", "Ctrl+V").c_str(), false, !m_Clipboard.empty()))
                         PasteClipboardInto(LibraryGuid, RelPath);
                     ImGui::Separator();
-                    if (ImGui::MenuItem("Delete", "Del", false, !bIsRoot))
+                    if (ImGui::MenuItem("Delete", xeditor::ShortcutText("Assets/Delete", "Del").c_str(), false, !bIsRoot))
                         DeleteSingleToTrash(LibraryGuid, RelPath);
                     ImGui::Separator();
                     // "SC Revert" - direct user request, same left-tree folder scope as Rename/Cut/
@@ -1658,7 +1660,7 @@ namespace xresource_editor
                         xresource_editor::DrawPadlockShape(ImGui::GetWindowDrawList(), Center, 11.0f, IM_COL32(180, 180, 185, 255)); // neutral grey - just a generic "source control" marker
                         if (ImGui::IsItemHovered())
                         {
-                            ImGui::BeginTooltip();
+                            xeditor::hint::PlaceAwayFromEdges(16.0f, ImVec2(380.0f, 220.0f)); ImGui::BeginTooltip();
                             ImGui::Text("Source Control");
                             ImGui::TextDisabled("Tracked/untracked/modified status, and lock ownership");
                             ImGui::EndTooltip();
@@ -1719,15 +1721,15 @@ namespace xresource_editor
                         // Rename/Cut/Copy/Paste/Delete-to-trash shortcuts make no sense on an item
                         // that's already IN the trash - Trash mode gets no keyboard shortcuts this pass,
                         // Restore is mouse/context-menu only (see the row loop's own trash-mode branch).
-                        else if (!m_bBrowsingTrash && ImGui::IsKeyPressed(ImGuiKey_F2) && m_MultiSelected.size() == 1 && !m_SelectedFile.empty())
+                        else if (!m_Browser.m_bFileKeysByHost && !m_bBrowsingTrash && ImGui::IsKeyPressed(ImGuiKey_F2) && m_MultiSelected.size() == 1 && !m_SelectedFile.empty())
                             StartRename(m_SelectedLibrary, m_SelectedFolder / m_SelectedFile);
-                        else if (!m_bBrowsingTrash && IO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X))
+                        else if (!m_Browser.m_bFileKeysByHost && !m_bBrowsingTrash && IO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X))
                             CutSelection();
-                        else if (!m_bBrowsingTrash && IO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C))
+                        else if (!m_Browser.m_bFileKeysByHost && !m_bBrowsingTrash && IO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C))
                             CopySelection();
-                        else if (!m_bBrowsingTrash && IO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V))
+                        else if (!m_Browser.m_bFileKeysByHost && !m_bBrowsingTrash && IO.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V))
                             PasteClipboard();
-                        else if (!m_bBrowsingTrash && ImGui::IsKeyPressed(ImGuiKey_Delete) && !m_MultiSelected.empty())
+                        else if (!m_Browser.m_bFileKeysByHost && !m_bBrowsingTrash && ImGui::IsKeyPressed(ImGuiKey_Delete) && !m_MultiSelected.empty())
                             DeleteSelectionToTrash();
                     }
 
@@ -1775,7 +1777,7 @@ namespace xresource_editor
                                 xresource_editor::GetSourceControlTooltipText(E.m_StatusBadge, E.m_LockBadge, Title, Desc);
                                 if (Title)
                                 {
-                                    ImGui::BeginTooltip();
+                                    xeditor::hint::PlaceAwayFromEdges(16.0f, ImVec2(380.0f, 220.0f)); ImGui::BeginTooltip();
                                     ImGui::Text("%s", Title);
                                     ImGui::TextDisabled("%s", Desc);
                                     ImGui::EndTooltip();
@@ -1885,7 +1887,7 @@ namespace xresource_editor
                                         // resource tooltip in virtual_tree_tab.h.
                                         xresource_editor::PlaceTooltipAwayFromEdges();
                                         ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
-                                        ImGui::BeginTooltip();
+                                        xeditor::hint::PlaceAwayFromEdges(16.0f, ImVec2(380.0f, 220.0f)); ImGui::BeginTooltip();
                                         ImGui::Text("Used by %zu resource%s:", Total, Total == 1 ? "" : "s");
                                         for (auto& N : Names) ImGui::BulletText("%s", N.c_str());
                                         if (Total > Names.size()) ImGui::Text("...and %zu more", Total - Names.size());
@@ -2036,16 +2038,16 @@ namespace xresource_editor
                                     }
 
                                     ImGui::Separator();
-                                    if (ImGui::MenuItem("Rename", "F2", false, m_MultiSelected.size() == 1))
+                                    if (ImGui::MenuItem("Rename", xeditor::ShortcutText("Assets/Rename", "F2").c_str(), false, m_MultiSelected.size() == 1))
                                         StartRename(m_SelectedLibrary, m_SelectedFolder / m_SelectedFile);
-                                    if (ImGui::MenuItem("Cut", "Ctrl+X"))
+                                    if (ImGui::MenuItem("Cut", xeditor::ShortcutText("Assets/Cut", "Ctrl+X").c_str()))
                                         CutSelection();
-                                    if (ImGui::MenuItem("Copy", "Ctrl+C"))
+                                    if (ImGui::MenuItem("Copy", xeditor::ShortcutText("Assets/Copy", "Ctrl+C").c_str()))
                                         CopySelection();
-                                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_Clipboard.empty()))
+                                    if (ImGui::MenuItem("Paste", xeditor::ShortcutText("Assets/Paste", "Ctrl+V").c_str(), false, !m_Clipboard.empty()))
                                         PasteClipboard();
                                     ImGui::Separator();
-                                    if (ImGui::MenuItem("Delete", "Del"))
+                                    if (ImGui::MenuItem("Delete", xeditor::ShortcutText("Assets/Delete", "Del").c_str()))
                                         DeleteSelectionToTrash();
                                     ImGui::EndPopup();
                                 }
@@ -2110,7 +2112,7 @@ namespace xresource_editor
                     // claimed this same frame. Doesn't apply in Trash mode - nothing pastes INTO trash.
                     if (!m_bBrowsingTrash && ImGui::BeginPopupContextWindow("Files Background Context", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverExistingPopup))
                     {
-                        if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_Clipboard.empty()))
+                        if (ImGui::MenuItem("Paste", xeditor::ShortcutText("Assets/Paste", "Ctrl+V").c_str(), false, !m_Clipboard.empty()))
                             PasteClipboard();
                         ImGui::EndPopup();
                     }

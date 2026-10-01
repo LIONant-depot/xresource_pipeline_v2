@@ -2,6 +2,7 @@
 #define ASSERT_BROWSER_COMPILER_TAB
 #pragma once
 #include "xresource_editor_asset_browser.h"
+#include "dependencies/xeditor/include/xeditor/hint.h"
 #include "xresource_editor_asset_mgr.h"
 #include "imgui.h"
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
@@ -407,7 +408,7 @@ namespace xresource_editor
                     if (OldState==false) m_AssetMgr.m_Compilation.StartCompilation();
                 }
 
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip(OldState ? "Press if you want to make the compilation system be manual" : "Press if you want the compilation system to be automatic");
+                if (ImGui::IsItemHovered()) xeditor::hint::Text(OldState ? "Press if you want to make the compilation system be manual" : "Press if you want the compilation system to be automatic");
 
                 if (OldState) 
                 {
@@ -422,7 +423,7 @@ namespace xresource_editor
                         // Trigger compilation manually
                         m_AssetMgr.m_Compilation.StartCompilation();
                     }
-                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Press to run compilation process");
+                    if (ImGui::IsItemHovered()) xeditor::hint::Text("Press to run compilation process");
                     if (m_AssetMgr.m_Compilation.m_PauseCompilation.load()) ImGui::EndDisabled();
                 }
             }
@@ -459,7 +460,7 @@ namespace xresource_editor
                     // is already running, so this is always safe to call).
                     if (OldState) m_AssetMgr.m_Compilation.StartCompilation();
                 }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip(OldState ? "Press if you want to resume the compilation process" : "Press to pause the compilation process");
+                if (ImGui::IsItemHovered()) xeditor::hint::Text(OldState ? "Press if you want to resume the compilation process" : "Press to pause the compilation process");
 
                 if (OldState)
                 {
@@ -478,7 +479,7 @@ namespace xresource_editor
                 {
                     ImGui::SameLine();
                     ImGui::Text("Debug:");
-                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Debug level use to compile the resources with");
+                    if (ImGui::IsItemHovered()) xeditor::hint::Text("Debug level use to compile the resources with");
 
                     constexpr static std::array items     = { "D0 - None", "D1 - Basic", "Dz - Maximum" };
                     static const float          max_width = ComputeWidthComboBox(items);
@@ -498,7 +499,7 @@ namespace xresource_editor
                 {
                     ImGui::SameLine();
                     ImGui::Text("Opt:");
-                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Optimization level use to compile the resources with");
+                    if (ImGui::IsItemHovered()) xeditor::hint::Text("Optimization level use to compile the resources with");
 
                     constexpr static std::array items       = { "O0 - None", "O1 - Normal", "Oz - Maximum" };
                     static const float          max_width   = ComputeWidthComboBox(items);

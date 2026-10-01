@@ -1,4 +1,5 @@
 #include "xresource_editor_asset_browser.h"
+#include "dependencies/xeditor/include/xeditor/hint.h"
 #include "xresource_editor_asset_mgr.h"
 
 #include "imgui.h"
@@ -2758,7 +2759,7 @@ namespace xresource_editor
 
                     xresource_editor::PlaceTooltipAwayFromEdges();
                     ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
-                    ImGui::BeginTooltip();
+                    xeditor::hint::PlaceAwayFromEdges(16.0f, ImVec2(380.0f, 220.0f)); ImGui::BeginTooltip();
 
                     const bool bHasThumbnail = E.m_Thumbnail.isValid();
                     const auto Row = [](const char* pLabel, const std::string& Value) noexcept
