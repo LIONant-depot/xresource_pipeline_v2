@@ -1125,7 +1125,7 @@ namespace xresource_editor
             ImGui::OpenPopup("Undo Changes##SCConfirm");
             S.m_bUndoChangesConfirmPending = false;
         }
-        if (ImGui::BeginPopupModal("Undo Changes##SCConfirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        if (ImGui::BeginPopupModal("Undo Changes##SCConfirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
         {
             std::vector<const sc_panel_row*> Selected;
             for (auto& Row : AllRows)

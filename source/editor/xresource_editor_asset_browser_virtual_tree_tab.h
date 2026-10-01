@@ -2648,7 +2648,7 @@ namespace xresource_editor
                     ImGui::OpenPopup("SC Revert##ResourceMenuConfirm");
                     m_bSCRevertPending = false;
                 }
-                if (ImGui::BeginPopupModal("SC Revert##ResourceMenuConfirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+                if (ImGui::BeginPopupModal("SC Revert##ResourceMenuConfirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
                 {
                     ImGui::TextUnformatted(m_SCRevertPendingMulti.empty()
                         ? "Discard ALL local changes to this resource? This cannot be undone."

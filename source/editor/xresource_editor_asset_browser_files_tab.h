@@ -651,7 +651,7 @@ namespace xresource_editor
             if (m_PendingConfirmation.has_value())
                 ImGui::OpenPopup("Descriptor Impact Warning");
 
-            if (ImGui::BeginPopupModal("Descriptor Impact Warning", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+            if (ImGui::BeginPopupModal("Descriptor Impact Warning", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
             {
                 if (m_PendingConfirmation.has_value())
                 {
@@ -689,7 +689,7 @@ namespace xresource_editor
             if (m_PendingOpenConfirm.has_value())
                 ImGui::OpenPopup("File Locked");
 
-            if (ImGui::BeginPopupModal("File Locked", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+            if (ImGui::BeginPopupModal("File Locked", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
             {
                 if (m_PendingOpenConfirm.has_value())
                 {
@@ -2090,7 +2090,7 @@ namespace xresource_editor
                         ImGui::OpenPopup("SC Revert##FilesConfirm");
                         m_bSCRevertPending = false;
                     }
-                    if (ImGui::BeginPopupModal("SC Revert##FilesConfirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+                    if (ImGui::BeginPopupModal("SC Revert##FilesConfirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
                     {
                         ImGui::TextUnformatted("Discard local changes under the selected item(s)? This cannot be undone.");
                         ImGui::Separator();
