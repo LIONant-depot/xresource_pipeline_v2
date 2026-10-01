@@ -1,6 +1,7 @@
 #ifndef _E10_ASSETBROWSER_H
 #define _E10_ASSETBROWSER_H
 #pragma once
+#include "dependencies/xeditor/include/xeditor/widgets.h"
 #include <cstring>
 #include "source/Tools/xgpu_imgui_breach.h"
 #include "source/Tools/xgpu_xcore_bitmap_helpers.h"
@@ -694,69 +695,13 @@ namespace e10
 
         void RenderSearchBar(ImVec2 Size)
         {
-            std::array<char,256> searchBuffer{0}; // Buffer for search text
+            const auto x = ImGui::GetCursorPosX();
 
-            strcpy_s( searchBuffer.data(), searchBuffer.size(), m_SearchString.c_str());
-
-            auto x = ImGui::GetCursorPosX();
-
-            if (ImGui::Button("\xe2\x96\xbc"))
-            {
-                m_SearchString.clear();
-                searchBuffer[0]=0;
-            }
+            if (ImGui::Button("\xe2\x96\xbc")) m_SearchString.clear();
             ImGui::SameLine(0, 0.1f);
 
-            if (searchBuffer[0] != 0)
-            {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f)); // Gray
-                if (ImGui::Button("X"))
-                {
-                    searchBuffer[0] = 0;
-                }
-
-                ImGui::SameLine(0, 0.1f);
-                ImGui::PopStyleColor();
-            }
-            Size.x -= ImGui::GetCursorPosX() - x;
-
-            // Style adjustments
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f); // Rounded corners
-
-            // Full width for the input
-            float inputWidth = Size.x;
-            ImGui::PushItemWidth(inputWidth);
-
-            // Search input field
-            const bool NewContent = ImGui::InputText("##search", searchBuffer.data(), searchBuffer.size());
-
-            // Check if input is focused or has text
-            bool isActive = ImGui::IsItemActive(); // True when input is focused
-            bool hasText = (searchBuffer[0] != '\0'); // True when buffer has content
-
-            // Render magnifying glass only when input is inactive and empty
-            if (!isActive && !hasText) {
-                // Position the icon inside the input field
-                ImVec2 inputPos = ImGui::GetItemRectMin(); // Top-left corner of input
-                ImVec2 cursorPos = ImGui::GetCursorScreenPos(); // Current cursor pos
-                float offsetX = inputPos.x + 10.0f; // 10px from left edge
-                float offsetY = inputPos.y + 4.0f;  // Vertically center (adjust as needed)
-
-                ImGui::SetCursorScreenPos(ImVec2(offsetX, offsetY)); // Move cursor to position icon
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f)); // Gray
-                ImGui::Text("\xee\x9c\xa1"); // Magnifying glass
-
-                ImGui::PopStyleColor();
-
-                // Reset cursor position to avoid affecting layout
-                ImGui::SetCursorScreenPos(cursorPos);
-            }
-
-            ImGui::PopItemWidth();
-            ImGui::PopStyleVar(1); // Restore style vars
-
-            // Copy back the string
-            m_SearchString = std::string_view(searchBuffer.data());
+            // The box itself (magnifying glass, gray X, rounded input) is the editors' one shared search bar.
+            xeditor::RenderTreeSearchBar(m_SearchString, Size.x - (ImGui::GetCursorPosX() - x));
         }
 
         //=============================================================================
