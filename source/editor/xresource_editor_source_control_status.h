@@ -27,6 +27,8 @@
 #include "dependencies/xsource_control/source/sc_git_lfs_provider.hpp"
 #include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_source_control_cache.h"
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <cwctype>
 #include <memory>
 #include <mutex>
@@ -257,11 +259,22 @@ namespace xresource_editor::source_control
         return !ChunksBeingScanned().empty();
     }
 
+    // Shutdown (REAL BUG FOUND 2026-10: 85 crash records since 10-02, every one a scan worker reading the workspace registry or a session after the process began to tear
+    // its statics down - an editor that ended while its startup scan was still running died with an access violation in GetOrCreateWorkspace / ToWorkspacePath):
+    // no scan starts once this has been called, and it returns when the ones running have finished (a git status takes ~100 ms; it gives up waiting after 15 s).
+    inline std::atomic<bool>& ScansStopped() noexcept { static std::atomic<bool> B{ false }; return B; }
+    inline void StopSourceControlScans() noexcept
+    {
+        ScansStopped().store(true);
+        for (int i = 0; i < 300 && IsScanInProgress(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
     inline void LaunchSourceControlStatusScanChunk(std::wstring RootPath, std::wstring ChunkTag
         , std::vector<std::string> Pathspecs, std::vector<std::wstring> CoveredPrefixes, bool bIncludeLocks
         , xscheduler::priority Priority) noexcept
     {
         const std::wstring Key = RootPath + L"|" + ChunkTag;
+        if (ScansStopped().load()) return;                                                  // the editor is shutting down
         {
             std::lock_guard<std::mutex> Lock(ScanningMutex());
             if (!ChunksBeingScanned().insert(Key).second) return; // already scanning this chunk
