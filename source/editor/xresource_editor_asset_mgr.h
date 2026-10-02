@@ -461,10 +461,13 @@ namespace xresource_editor
                     entry Entry;
                     do
                     {
-                        for (auto& Q : m_Instance.m_Queue.get())
+                        // REAL BUG FOUND (2026-10): this walked the levels with a range-for over m_Queue.get() (iterators and a reference to
+                        // each queue) while the lock below is released twice per level. AllocateQueues (plugin registration on another thread)
+                        // grows that vector under the same lock the moment we let go, the vector reallocates, and the next Q.pop() read freed
+                        // memory (an access violation in queue::pop, seen on a worker thread). The levels are walked by INDEX now and the vector
+                        // is fetched again after every relock: it only ever grows, so an index stays valid.
+                        for (std::size_t iCurIndex = 0; iCurIndex < m_Instance.m_Queue.get().size(); ++iCurIndex)
                         {
-                            const auto iCurIndex = static_cast<std::size_t>( &Q - m_Instance.m_Queue.get().data() );
-
                             if (not ContinueCompiling())
                             {
                                 std::as_const(m_Instance.m_Queue).unlock();
@@ -494,7 +497,7 @@ namespace xresource_editor
                             }
 
                             // Try to pull a new job
-                            if (Q.pop(Entry))
+                            if (m_Instance.m_Queue.get()[iCurIndex].pop(Entry))
                             {
                                 ++m_Instance.m_WorkersWorking;
                                 Compilation.Submit([JobEntry = std::move(Entry), this]() mutable
@@ -532,7 +535,7 @@ namespace xresource_editor
                             WaterLevel = std::max(WaterLevel, iCurIndex);
                         }
 
-                    } while (WaterLevel < (m_Instance.m_Queue.get().size()-1));
+                    } while (not m_Instance.m_Queue.get().empty() && WaterLevel < (m_Instance.m_Queue.get().size()-1));         // (no levels yet: size()-1 would wrap and this would spin)
 
                     std::as_const(m_Instance.m_Queue).unlock();
                 }
@@ -614,13 +617,10 @@ namespace xresource_editor
             {
                 xcontainer::lock::scope Lk(m_Queue);
 
+                // Idempotent: asking for the levels again (a second plugin group, a reopened project) never adds levels, which would shift the
+                // priority of the entries already waiting in them. The vector only ever grows, so a walker holding an index stays valid.
                 auto& QueueList = m_Queue.get();
-                QueueList.reserve(Count);
-
-                for (int i = 0; i < Count; ++i)
-                {
-                    QueueList.emplace_back();
-                }
+                while (QueueList.size() < static_cast<std::size_t>(Count)) QueueList.emplace_back();
             }
 
             void PauseCompilation( bool bPause )
