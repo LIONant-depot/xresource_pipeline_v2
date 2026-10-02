@@ -7,7 +7,7 @@
 // the "Multi-library project model" plan section). Unlike a scene dependency (guid-only - every scene
 // already lives under the SAME project's own scene folder), a library dependency can be in a
 // completely different depot, so locating one that isn't already loaded this session needs a Path,
-// carried as a Base64-encoded wstring on -ParentPath.
+// carried as text on -ParentPath.
 //
 // Cycle detection (WouldCreateLibraryDependencyCycle) is scoped to currently-LOADED libraries only -
 // unlike a scene's fixed-folder-derivable Descriptor path, a library's Path lives only inside another
@@ -38,8 +38,8 @@
 
 namespace xresource_editor::commands
 {
-    inline std::string  EncodeLibraryPath(const std::wstring& Path) noexcept { return xeditor::Base64Encode(xstrtool::To(Path)); }
-    inline std::wstring DecodeLibraryPath(const std::string& Encoded) noexcept { return xstrtool::To(xeditor::Base64Decode(Encoded)); }
+    inline std::string  EncodeLibraryPath(const std::wstring& Path) noexcept { return xeditor::Quote(xstrtool::To(Path)); }
+    inline std::wstring DecodeLibraryPath(const std::string& Encoded) noexcept { return xstrtool::To(Encoded); }
 
     // Graph-walking primitives (CollectTransitiveLibraryParents/IsLibraryLegalReferenceTarget) now
     // live on library_mgr itself (xresource_editor_asset_mgr.h) - shared with the generic Asset Browser UI's own
@@ -131,20 +131,20 @@ namespace xresource_editor::commands
     // persisted to Library.config.txt immediately, and Parent is brought resident this session as a
     // dependent load if it wasn't already (mirrors EnsureLibraryLoaded's own dependency-recursion
     // semantics - bExplicitRequest=false).
-    // Usage: AddLibraryDependency -Library hexguid -Parent hexguid [-ParentPath base64]
+    // Usage: AddLibraryDependency -Library hexguid -Parent hexguid [-ParentPath text]
     //================================================================================================
     struct add_library_dependency_cmd : xundo::command_base
     {
         add_library_dependency_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::command_base(System, "AddLibraryDependency", pDataBase) { RegisterArguments(); }
         const char* getCommandHelp() const noexcept override
         {
-            return "Adds an explicit library dependency (ParentLibraries), persists it, and loads the dependency into this session if needed. Refuses cycles. Usage: AddLibraryDependency -Library hexguid -Parent hexguid [-ParentPath base64] (ParentPath required only the first time a not-yet-loaded library is referenced)";
+            return "Adds an explicit library dependency (ParentLibraries), persists it, and loads the dependency into this session if needed. Refuses cycles. Usage: AddLibraryDependency -Library hexguid -Parent hexguid [-ParentPath text] (ParentPath required only the first time a not-yet-loaded library is referenced)";
         }
         void RegisterArguments() noexcept override
         {
             m_hLibrary    = m_Parser.addOption("Library",    "Owning library instance guid, 16 hex digits",                              true,  1);
             m_hParent     = m_Parser.addOption("Parent",     "Dependency library instance guid, 16 hex digits",                          true,  1);
-            m_hParentPath = m_Parser.addOption("ParentPath", "Dependency library's root path, Base64 - required if not already loaded",  false, 1);
+            m_hParentPath = m_Parser.addOption("ParentPath", "Dependency library's root path - required if not already loaded",  false, 1);
         }
 
         std::string Redo() noexcept override
@@ -374,18 +374,18 @@ namespace xresource_editor::commands
     // pointer-tag-colliding kind a hand-picked hex guid can accidentally produce) and loads it into
     // this session as its OWN independent library - not added as a dependency or project member of
     // anything. Not undo-tracked (query_command_base) - see this file's own top comment for why.
-    // Usage: CreateLibrary -Path base64
+    // Usage: CreateLibrary -Path text
     //================================================================================================
     struct create_library_query_cmd : xundo::query_command_base
     {
         create_library_query_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::query_command_base(System, "CreateLibrary", pDataBase) { RegisterArguments(); }
         const char* getCommandHelp() const noexcept override
         {
-            return "Creates a brand-new, standalone library on disk and loads it into this session, independent of any other library. Not undoable. Usage: CreateLibrary -Path base64";
+            return "Creates a brand-new, standalone library on disk and loads it into this session, independent of any other library. Not undoable. Usage: CreateLibrary -Path text";
         }
         void RegisterArguments() noexcept override
         {
-            m_hPath = m_Parser.addOption("Path", "New library's root folder, Base64-encoded wide path", true, 1);
+            m_hPath = m_Parser.addOption("Path", "New library's root folder", true, 1);
         }
 
         std::string Query() noexcept override

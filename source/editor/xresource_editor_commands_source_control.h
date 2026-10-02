@@ -11,9 +11,9 @@
 // own top comment). None of these belong in the local Undo/Redo history.
 //
 // Path arguments reuse the EXACT convention xresource_editor_commands_asset_files.h already established for real
-// (non-descriptor) paths: Base64-encoded, relative to the library root (EncodeAssetPath/
-// DecodeAssetPath, same file) - real paths contain backslashes/spaces that would otherwise collide
-// with the CLI's own token splitting.
+// (non-descriptor) paths: text (in quotes), relative to the library root (EncodeAssetPath/
+// DecodeAssetPath, same file) - real paths contain backslashes/spaces: quoted, they are one value
+// (see documentation/Editors/command_line.md).
 #include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_command_guids.h"
 #include "dependencies/xundo/source/xundo_system.h"
 #include "dependencies/xeditor/include/xeditor/commands.h"
@@ -85,13 +85,13 @@ namespace xresource_editor::commands
         RunRevertUnderFolder(Undo, LibraryGuid, RootPath, FolderPath);
     }
 
-    // Decodes a "-Paths" argument: Base64 of the real paths joined by '\n', same free-text-encoding
+    // Reads a "-Paths" argument: the real paths joined by '\n' in one quoted value, same free-text
     // convention -Message already uses. Added in Phase 4A so a changelist with several files can
     // land as ONE real commit (SourceControlCommit) instead of one commit per file - the previous
     // -Path (singular) argument stays for simple single-file scripting/CLI use.
     inline std::vector<std::wstring> DecodeAssetPathList(const std::string& EncodedJoined) noexcept
     {
-        const auto Joined = xeditor::Base64Decode(EncodedJoined);
+        const auto& Joined = EncodedJoined;
         std::vector<std::wstring> Paths;
         std::size_t Start = 0;
         while (Start <= Joined.size())
@@ -105,7 +105,7 @@ namespace xresource_editor::commands
         return Paths;
     }
 
-    // Shared by Stage/Commit/Revert: resolves whichever of -Path (singular) / -Paths (Base64,
+    // Shared by Stage/Commit/Revert: resolves whichever of -Path (singular) / -Paths (text,
     // '\n'-joined, Phase 4A) was actually supplied into one path list. Returns empty if neither
     // argument was given at all - the caller decides what that means (bad arguments).
     inline std::vector<sc::WorkspacePath> ResolveRequestPaths(xcmdline::parser& Parser, xcmdline::parser::handle hPath, xcmdline::parser::handle hPaths) noexcept
@@ -327,11 +327,11 @@ namespace xresource_editor::commands
     struct source_control_lock_query_cmd : xundo::query_command_base
     {
         source_control_lock_query_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::query_command_base(System, "SourceControlLock", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Locks a file before editing (required for binary/LFS-tracked assets). Usage: SourceControlLock -Library hexguid -Path base64 [-Try 1]"; }
+        const char* getCommandHelp() const noexcept override { return "Locks a file before editing (required for binary/LFS-tracked assets). Usage: SourceControlLock -Library hexguid -Path text [-Try 1]"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary = m_Parser.addOption("Library", "Library instance guid, 16 hex digits",                         true,  1);
-            m_hPath    = m_Parser.addOption("Path",    "Path relative to the library root, Base64",                    true,  1);
+            m_hPath    = m_Parser.addOption("Path",    "Path relative to the library root",                    true,  1);
             m_hTry     = m_Parser.addOption("Try",     "Pass 1 to proceed even if the lock can't be acquired",         false, 1);
         }
 
@@ -395,11 +395,11 @@ namespace xresource_editor::commands
     struct source_control_unlock_query_cmd : xundo::query_command_base
     {
         source_control_unlock_query_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::query_command_base(System, "SourceControlUnlock", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Releases a lock. Usage: SourceControlUnlock -Library hexguid -Path base64 [-Force 1]"; }
+        const char* getCommandHelp() const noexcept override { return "Releases a lock. Usage: SourceControlUnlock -Library hexguid -Path text [-Force 1]"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary = m_Parser.addOption("Library", "Library instance guid, 16 hex digits",  true,  1);
-            m_hPath    = m_Parser.addOption("Path",    "Path relative to the library root, Base64", true,  1);
+            m_hPath    = m_Parser.addOption("Path",    "Path relative to the library root", true,  1);
             m_hForce   = m_Parser.addOption("Force",   "Pass 1 to unlock anyway - needed both to break someone else's lock AND to release your own lock on a file with uncommitted changes", false, 1);
         }
 
@@ -452,12 +452,12 @@ namespace xresource_editor::commands
     struct source_control_revert_query_cmd : xundo::query_command_base
     {
         source_control_revert_query_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::query_command_base(System, "SourceControlRevert", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Discards local edits to one or more tracked files (git checkout --). Does not remove a new/untracked file. Usage: SourceControlRevert -Library hexguid (-Path base64 | -Paths base64-of-newline-joined-paths)"; }
+        const char* getCommandHelp() const noexcept override { return "Discards local edits to one or more tracked files (git checkout --). Does not remove a new/untracked file. Usage: SourceControlRevert -Library hexguid (-Path text | -Paths text-of-newline-joined-paths)"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary = m_Parser.addOption("Library", "Library instance guid, 16 hex digits",  true,  1);
-            m_hPath    = m_Parser.addOption("Path",    "Path relative to the library root, Base64", false, 1);
-            m_hPaths   = m_Parser.addOption("Paths",   "Several paths, Base64 of the paths joined by '\\n'", false, 1);
+            m_hPath    = m_Parser.addOption("Path",    "Path relative to the library root", false, 1);
+            m_hPaths   = m_Parser.addOption("Paths",   "Several paths, one per line", false, 1);
         }
 
         std::string Query() noexcept override
@@ -498,12 +498,12 @@ namespace xresource_editor::commands
     struct source_control_stage_query_cmd : xundo::query_command_base
     {
         source_control_stage_query_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::query_command_base(System, "SourceControlStage", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Stages one or more files (git add), without committing. Usage: SourceControlStage -Library hexguid (-Path base64 | -Paths base64-of-newline-joined-paths)"; }
+        const char* getCommandHelp() const noexcept override { return "Stages one or more files (git add), without committing. Usage: SourceControlStage -Library hexguid (-Path text | -Paths text-of-newline-joined-paths)"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary = m_Parser.addOption("Library", "Library instance guid, 16 hex digits",  true, 1);
-            m_hPath    = m_Parser.addOption("Path",    "Path relative to the library root, Base64", false, 1);
-            m_hPaths   = m_Parser.addOption("Paths",   "Several paths, Base64 of the paths joined by '\\n'", false, 1);
+            m_hPath    = m_Parser.addOption("Path",    "Path relative to the library root", false, 1);
+            m_hPaths   = m_Parser.addOption("Paths",   "Several paths, one per line", false, 1);
         }
 
         std::string Query() noexcept override
@@ -542,13 +542,13 @@ namespace xresource_editor::commands
     struct source_control_commit_query_cmd : xundo::query_command_base
     {
         source_control_commit_query_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::query_command_base(System, "SourceControlCommit", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Stages, commits (all given paths as ONE commit), and pushes, releasing any lock this session holds on the given paths. Usage: SourceControlCommit -Library hexguid (-Path base64 | -Paths base64-of-newline-joined-paths) -Message base64 [-KeepLocks 1]"; }
+        const char* getCommandHelp() const noexcept override { return "Stages, commits (all given paths as ONE commit), and pushes, releasing any lock this session holds on the given paths. Usage: SourceControlCommit -Library hexguid (-Path text | -Paths text-of-newline-joined-paths) -Message text [-KeepLocks 1]"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary   = m_Parser.addOption("Library",   "Library instance guid, 16 hex digits",         true,  1);
-            m_hPath      = m_Parser.addOption("Path",      "Path relative to the library root, Base64",    false, 1);
-            m_hPaths     = m_Parser.addOption("Paths",     "Several paths, Base64 of the paths joined by '\\n' - committed together as ONE commit", false, 1);
-            m_hMessage   = m_Parser.addOption("Message",   "Commit message, Base64-encoded",                true,  1);
+            m_hPath      = m_Parser.addOption("Path",      "Path relative to the library root",    false, 1);
+            m_hPaths     = m_Parser.addOption("Paths",     "Several paths, one per line - committed together as ONE commit", false, 1);
+            m_hMessage   = m_Parser.addOption("Message",   "Commit message",                true,  1);
             m_hKeepLocks = m_Parser.addOption("KeepLocks", "Pass 1 to keep the lock after committing",      false, 1);
         }
 
@@ -566,7 +566,7 @@ namespace xresource_editor::commands
             auto* pWorkspace = xresource_editor::source_control::GetOrCreateWorkspace(RootPath);
             if (!pWorkspace) return "SourceControlCommit: not a git working tree";
 
-            const auto Message = xeditor::Base64Decode(std::get<std::string>(MessageArg));
+            const auto Message = std::get<std::string>(MessageArg);
 
             sc::SubmitRequest Request;
             Request.paths = ResolveRequestPaths(m_Parser, m_hPath, m_hPaths);

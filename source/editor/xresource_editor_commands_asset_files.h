@@ -9,9 +9,9 @@
 // tree's own Rename/Move/Delete commands, just for the REAL Assets/ folder on disk instead.
 //
 // Every path argument here is a full path relative to the LIBRARY ROOT (e.g.
-// "Assets\\Textures\\wood.png" - matching library_db::asset::m_Path's own convention), Base64-encoded
-// since real paths contain backslashes/spaces that would otherwise collide with the CLI's own token
-// splitting - same reasoning Name already gets Base64-encoded for in xresource_editor_commands_assets.h.
+// "Assets\\Textures\\wood.png" - matching library_db::asset::m_Path's own convention), written as text (in quotes)
+// since real paths contain backslashes/spaces: quoted, they are one value
+// (see documentation/Editors/command_line.md).
 //
 // DeleteAssetFileToTrash's own -TrashPath argument is REQUIRED, not auto-computed by Redo() itself:
 // Redo() only ever sees its own command-line arguments (it has no access to whatever
@@ -30,8 +30,8 @@
 
 namespace xresource_editor::commands
 {
-    inline std::string EncodeAssetPath(const std::wstring& Path) noexcept { return xeditor::Base64Encode(xstrtool::To(Path)); }
-    inline std::wstring DecodeAssetPath(const std::string& Encoded) noexcept { return xstrtool::To(xeditor::Base64Decode(Encoded)); }
+    inline std::string EncodeAssetPath(const std::wstring& Path) noexcept { return xeditor::Quote(xstrtool::To(Path)); }
+    inline std::wstring DecodeAssetPath(const std::string& Encoded) noexcept { return xstrtool::To(Encoded); }
 
     // "-Force 1" bypasses the dependent-count warning below - the CLI/AI equivalent of clicking
     // "Continue" on the Asset Tree's own confirmation dialog (xresource_editor_asset_browser_files_tab.h's
@@ -55,12 +55,12 @@ namespace xresource_editor::commands
     struct rename_asset_file_cmd : xundo::command_base
     {
         rename_asset_file_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::command_base(System, "RenameAssetFile", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Renames a real file in the Assets folder, cascading the change into every dependent resource's Descriptor.txt (undoable). Fails with a count if other resources depend on it, unless -Force 1 is passed. Usage: RenameAssetFile -Library hexguid -OldPath base64 -NewPath base64 [-Force 1]"; }
+        const char* getCommandHelp() const noexcept override { return "Renames a real file in the Assets folder, cascading the change into every dependent resource's Descriptor.txt (undoable). Fails with a count if other resources depend on it, unless -Force 1 is passed. Usage: RenameAssetFile -Library hexguid -OldPath text -NewPath text [-Force 1]"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary = m_Parser.addOption("Library", "Library instance guid, 16 hex digits",                  true, 1);
-            m_hOldPath = m_Parser.addOption("OldPath",  "Current path relative to the library root, Base64",    true, 1);
-            m_hNewPath = m_Parser.addOption("NewPath",  "New path relative to the library root, Base64",        true, 1);
+            m_hOldPath = m_Parser.addOption("OldPath",  "Current path relative to the library root",    true, 1);
+            m_hNewPath = m_Parser.addOption("NewPath",  "New path relative to the library root",        true, 1);
             m_hForce   = m_Parser.addOption("Force",    "Pass 1 to skip the dependent-count check and proceed anyway (for AI/script use - there is no dialog to click)", false, 1);
         }
 
@@ -118,12 +118,12 @@ namespace xresource_editor::commands
     struct move_asset_file_cmd : xundo::command_base
     {
         move_asset_file_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::command_base(System, "MoveAssetFile", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Moves a real file in the Assets folder to a different folder, cascading the change into every dependent resource's Descriptor.txt (undoable). Fails with a count if other resources depend on it, unless -Force 1 is passed. Usage: MoveAssetFile -Library hexguid -OldPath base64 -NewPath base64 [-Force 1]"; }
+        const char* getCommandHelp() const noexcept override { return "Moves a real file in the Assets folder to a different folder, cascading the change into every dependent resource's Descriptor.txt (undoable). Fails with a count if other resources depend on it, unless -Force 1 is passed. Usage: MoveAssetFile -Library hexguid -OldPath text -NewPath text [-Force 1]"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary = m_Parser.addOption("Library", "Library instance guid, 16 hex digits",                true, 1);
-            m_hOldPath = m_Parser.addOption("OldPath",  "Current path relative to the library root, Base64",  true, 1);
-            m_hNewPath = m_Parser.addOption("NewPath",  "New path relative to the library root, Base64",      true, 1);
+            m_hOldPath = m_Parser.addOption("OldPath",  "Current path relative to the library root",  true, 1);
+            m_hNewPath = m_Parser.addOption("NewPath",  "New path relative to the library root",      true, 1);
             m_hForce   = m_Parser.addOption("Force",    "Pass 1 to skip the dependent-count check and proceed anyway (for AI/script use - there is no dialog to click)", false, 1);
         }
 
@@ -186,12 +186,12 @@ namespace xresource_editor::commands
     struct delete_asset_file_cmd : xundo::command_base
     {
         delete_asset_file_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::command_base(System, "DeleteAssetFileToTrash", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Moves a real Assets file to the trash (undoable - restores it). -TrashPath must be pre-computed via ComputeTrashPath. Fails with a count if other resources depend on it, unless -Force 1 is passed. Usage: DeleteAssetFileToTrash -Library hexguid -Path base64 -TrashPath base64 [-Force 1]"; }
+        const char* getCommandHelp() const noexcept override { return "Moves a real Assets file to the trash (undoable - restores it). -TrashPath must be pre-computed via ComputeTrashPath. Fails with a count if other resources depend on it, unless -Force 1 is passed. Usage: DeleteAssetFileToTrash -Library hexguid -Path text -TrashPath text [-Force 1]"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary   = m_Parser.addOption("Library",   "Library instance guid, 16 hex digits",                       true, 1);
-            m_hPath      = m_Parser.addOption("Path",      "Path relative to the library root, Base64",                  true, 1);
-            m_hTrashPath = m_Parser.addOption("TrashPath", "Destination trash path, Base64 - from ComputeTrashPath",     true, 1);
+            m_hPath      = m_Parser.addOption("Path",      "Path relative to the library root",                  true, 1);
+            m_hTrashPath = m_Parser.addOption("TrashPath", "Destination trash path - from ComputeTrashPath",     true, 1);
             m_hForce     = m_Parser.addOption("Force",     "Pass 1 to skip the dependent-count check and proceed anyway (for AI/script use - there is no dialog to click)", false, 1);
         }
 
@@ -254,12 +254,12 @@ namespace xresource_editor::commands
     struct restore_asset_file_cmd : xundo::command_base
     {
         restore_asset_file_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::command_base(System, "RestoreAssetFileFromTrash", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Restores a trashed Assets file back to its original (or a chosen) path (undoable). Usage: RestoreAssetFileFromTrash -Library hexguid -TrashPath base64 -OriginalPath base64"; }
+        const char* getCommandHelp() const noexcept override { return "Restores a trashed Assets file back to its original (or a chosen) path (undoable). Usage: RestoreAssetFileFromTrash -Library hexguid -TrashPath text -OriginalPath text"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary      = m_Parser.addOption("Library",      "Library instance guid, 16 hex digits",       true, 1);
-            m_hTrashPath    = m_Parser.addOption("TrashPath",    "Current trash path, Base64",                 true, 1);
-            m_hOriginalPath = m_Parser.addOption("OriginalPath", "Path to restore to, Base64",                 true, 1);
+            m_hTrashPath    = m_Parser.addOption("TrashPath",    "Current trash path",                 true, 1);
+            m_hOriginalPath = m_Parser.addOption("OriginalPath", "Path to restore to",                 true, 1);
         }
 
         std::string Redo() noexcept override
@@ -317,12 +317,12 @@ namespace xresource_editor::commands
     struct copy_asset_file_cmd : xundo::command_base
     {
         copy_asset_file_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::command_base(System, "CopyAssetFile", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Copies a real Assets file to a new path (undoable - Undo trashes the copy, it does not permanently delete it). Usage: CopyAssetFile -Library hexguid -SourcePath base64 -NewPath base64"; }
+        const char* getCommandHelp() const noexcept override { return "Copies a real Assets file to a new path (undoable - Undo trashes the copy, it does not permanently delete it). Usage: CopyAssetFile -Library hexguid -SourcePath text -NewPath text"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary    = m_Parser.addOption("Library",    "Library instance guid, 16 hex digits",             true, 1);
-            m_hSourcePath = m_Parser.addOption("SourcePath", "Path to copy from, relative to library root, Base64", true, 1);
-            m_hNewPath    = m_Parser.addOption("NewPath",    "Path to copy to, relative to library root, Base64",   true, 1);
+            m_hSourcePath = m_Parser.addOption("SourcePath", "Path to copy from, relative to library root", true, 1);
+            m_hNewPath    = m_Parser.addOption("NewPath",    "Path to copy to, relative to library root",   true, 1);
         }
 
         std::string Redo() noexcept override

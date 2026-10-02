@@ -828,7 +828,7 @@ namespace xresource_editor
                 {
                     auto LibGUID            = m_SelectedLibrary.empty() ? m_AssetMgr.m_ProjectGUID : m_SelectedLibrary;
                     // Default name so Create Folder / Add Resource don't ship an empty -Name through
-                    // the command layer (empty Base64 is a missing cmdline arg - see m_OnCreateAsset).
+                    // the command layer (a default name is friendlier than an empty one - see m_OnCreateAsset).
                     const std::string DefaultName = std::format("New {}", E.m_TypeName);
                     auto LastGeneratedAsset = m_Browser.m_OnCreateAsset
                         ? m_Browser.m_OnCreateAsset(LibGUID, E.m_TypeGUID, m_ParentGUID, DefaultName)

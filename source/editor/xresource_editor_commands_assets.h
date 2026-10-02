@@ -172,12 +172,12 @@ namespace xresource_editor::commands
     struct rename_asset_cmd : xundo::command_base
     {
         rename_asset_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::command_base(System, "RenameAsset", pDataBase) { RegisterArguments(); }
-        const char* getCommandHelp() const noexcept override { return "Renames an asset (undoable). Usage: RenameAsset -Library hexguid -Asset assetguid -Name base64"; }
+        const char* getCommandHelp() const noexcept override { return "Renames an asset (undoable). Usage: RenameAsset -Library hexguid -Asset assetguid -Name text"; }
         void RegisterArguments() noexcept override
         {
             m_hLibrary = m_Parser.addOption("Library", "Library instance guid, 16 hex digits", true, 1);
             m_hAsset   = m_Parser.addOption("Asset",   "Asset guid, 32 hex digits",             true, 1);
-            m_hName    = m_Parser.addOption("Name",    "New name, Base64-encoded",              true, 1);
+            m_hName    = m_Parser.addOption("Name",    "New name",              true, 1);
         }
 
         std::string Redo() noexcept override
@@ -190,7 +190,7 @@ namespace xresource_editor::commands
 
             const auto LibraryGuid = ParseLibraryGuid(std::get<std::string>(LibraryArg));
             const auto AssetGuid   = ParseAssetGuid(std::get<std::string>(AssetArg));
-            const auto Name        = xeditor::Base64Decode(std::get<std::string>(NameArg));
+            const auto Name        = std::get<std::string>(NameArg);
 
             if (auto Err = xresource_editor::g_LibMgr.RenameDescriptor(LibraryGuid, AssetGuid, Name); Err)
                 return std::format("RenameAsset: {}", Err.getMessage());
@@ -474,7 +474,7 @@ namespace xresource_editor::commands
         create_asset_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::command_base(System, "CreateAsset", pDataBase) { RegisterArguments(); }
         const char* getCommandHelp() const noexcept override
         {
-            return "Creates a new asset (undoable - Undo moves it to the trash; the on-disk info.txt this writes is NOT deleted, only MoveToTrash/EmptyTrashcan can do that - see this command's own comment). Usage: CreateAsset -Library hexguid -Type hexguid -Asset assetguid -Parent assetguid -Name base64";
+            return "Creates a new asset (undoable - Undo moves it to the trash; the on-disk info.txt this writes is NOT deleted, only MoveToTrash/EmptyTrashcan can do that - see this command's own comment). Usage: CreateAsset -Library hexguid -Type hexguid -Asset assetguid -Parent assetguid -Name text";
         }
         void RegisterArguments() noexcept override
         {
@@ -482,7 +482,7 @@ namespace xresource_editor::commands
             m_hType    = m_Parser.addOption("Type",    "Asset type guid, 16 hex digits",                                true, 1);
             m_hAsset   = m_Parser.addOption("Asset",   "New asset's guid, 32 hex digits, pre-minted by the caller",     true, 1);
             m_hParent  = m_Parser.addOption("Parent",  "Parent asset guid, 32 hex digits",                              true, 1);
-            m_hName    = m_Parser.addOption("Name",    "Asset name, Base64-encoded",                                    true, 1);
+            m_hName    = m_Parser.addOption("Name",    "Asset name",                                    true, 1);
         }
 
         std::string Redo() noexcept override
@@ -498,7 +498,7 @@ namespace xresource_editor::commands
             const auto LibraryGuid = ParseLibraryGuid(std::get<std::string>(LibraryArg));
             const auto AssetGuid   = ParseAssetGuid(std::get<std::string>(AssetArg));
             const auto ParentGuid  = ParseAssetGuid(std::get<std::string>(ParentArg));
-            const auto Name        = xeditor::Base64Decode(std::get<std::string>(NameArg));
+            const auto Name        = std::get<std::string>(NameArg);
 
             if (AssetGuid.m_Instance.empty() || AssetGuid.m_Type.empty()) return "CreateAsset: bad asset guid";
             CreateOrRestoreAsset(LibraryGuid, AssetGuid, ParentGuid, Name);

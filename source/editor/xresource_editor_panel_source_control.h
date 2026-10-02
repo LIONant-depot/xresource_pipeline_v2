@@ -1681,11 +1681,11 @@ namespace xresource_editor
 
             std::string JoinedPaths;
             for (auto& P : Paths) { JoinedPaths += xstrtool::To(P); JoinedPaths += '\n'; }
-            const auto PathsB64 = xeditor::Base64Encode(JoinedPaths);
-            const auto MsgB64   = xeditor::Base64Encode(Comment);
+            const auto PathsText = xeditor::Quote(JoinedPaths);
+            const auto MsgText   = xeditor::Quote(Comment);
 
             const std::string CommitResult = SourceControlRunQuery(Undo, std::format("SourceControlCommit -Library {} -Paths {} -Message {}"
-                , LibraryGuidStr, PathsB64, MsgB64));
+                , LibraryGuidStr, PathsText, MsgText));
             Summary += CommitResult + "\n";
 
             if (!CommitResult.starts_with("SourceControlCommit: "))

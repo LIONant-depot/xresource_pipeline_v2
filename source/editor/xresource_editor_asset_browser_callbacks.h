@@ -29,7 +29,7 @@ namespace xresource_editor
         Browser.m_OnRenameAsset = [&Undo](xresource_editor::library::guid LibraryGuid, xresource::full_guid Asset, std::string_view NewName)
         {
             xeditor::Run(Undo, std::format("RenameAsset -Library {} -Asset {} -Name {}"
-                , xresource_editor::commands::FormatLibraryGuid(LibraryGuid), xresource_editor::commands::FormatAssetGuid(Asset), xeditor::Base64Encode(std::string(NewName))));
+                , xresource_editor::commands::FormatLibraryGuid(LibraryGuid), xresource_editor::commands::FormatAssetGuid(Asset), xeditor::Quote(std::string(NewName))));
         };
 
         Browser.m_OnMoveAsset = [&Undo](xresource_editor::library::guid LibraryGuid, xresource::full_guid Asset, xresource::full_guid OldParent, xresource::full_guid NewParent)
@@ -55,16 +55,13 @@ namespace xresource_editor
         // (xresource::instance_guid::GenerateGUID), so the command string always names an explicit id
         // rather than relying on CreateAsset's Redo to invent one (it deliberately never does - see
         // that command's own top comment on why Redo must stay deterministic/re-runnable).
-        // Name may be empty (Add Resource menu used to pass {}): Base64Encode("") is "", which
-        // leaves "-Name" with no argument and xcmdline returns "Missing arguments" - Create Folder
-        // (and every other type from that menu) became a silent UI no-op. Bare "-" is the cmdline
-        // empty-value placeholder (see xcmdline_parser::isFlag); Base64Decode("-") yields "".
+        // Name may be empty (the Add Resource menu passes {}): Quote("") is "", an empty value that the command takes as the empty name.
         Browser.m_OnCreateAsset = [&Undo](xresource_editor::library::guid LibraryGuid, xresource::type_guid Type, xresource::full_guid Parent, std::string_view Name) -> xresource::full_guid
         {
             xresource::instance_guid NewInstance{};
             NewInstance.GenerateGUID();
             const xresource::full_guid NewAsset{ .m_Instance = NewInstance, .m_Type = Type };
-            const std::string NameToken = Name.empty() ? std::string("-") : xeditor::Base64Encode(std::string(Name));
+            const std::string NameToken = xeditor::Quote(Name);
 
             xeditor::Run(Undo, std::format("CreateAsset -Library {} -Type {:016X} -Asset {} -Parent {} -Name {}"
                 , xresource_editor::commands::FormatLibraryGuid(LibraryGuid), Type.m_Value, xresource_editor::commands::FormatAssetGuid(NewAsset)
@@ -82,7 +79,7 @@ namespace xresource_editor
         Browser.m_OnAddLibraryDependency = [&DocUndo](xresource_editor::library::guid Owner, xresource_editor::library::guid Parent, const std::wstring& ParentPath)
         {
             xeditor::Run(DocUndo, std::format("AddLibraryDependency -Library {} -Parent {} -ParentPath {}"
-                , xresource_editor::commands::FormatLibraryGuid(Owner), xresource_editor::commands::FormatLibraryGuid(Parent), xeditor::Base64Encode(xstrtool::To(ParentPath))));
+                , xresource_editor::commands::FormatLibraryGuid(Owner), xresource_editor::commands::FormatLibraryGuid(Parent), xeditor::Quote(xstrtool::To(ParentPath))));
         };
 
         Browser.m_OnRemoveLibraryDependency = [&DocUndo](xresource_editor::library::guid Owner, xresource_editor::library::guid Parent)
