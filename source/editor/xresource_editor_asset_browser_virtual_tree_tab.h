@@ -1,3 +1,4 @@
+#include "dependencies/xeditor/include/xeditor/popup.h"
 #include "xresource_editor_asset_browser.h"
 #include "dependencies/xeditor/include/xeditor/hint.h"
 #include "xresource_editor_asset_mgr.h"
@@ -2648,7 +2649,7 @@ namespace xresource_editor
                     ImGui::OpenPopup("SC Revert##ResourceMenuConfirm");
                     m_bSCRevertPending = false;
                 }
-                if (ImGui::BeginPopupModal("SC Revert##ResourceMenuConfirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+                if (xeditor::BeginModal("SC Revert##ResourceMenuConfirm"))
                 {
                     ImGui::TextUnformatted(m_SCRevertPendingMulti.empty()
                         ? "Discard ALL local changes to this resource? This cannot be undone."

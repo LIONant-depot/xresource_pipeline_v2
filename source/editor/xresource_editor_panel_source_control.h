@@ -1,6 +1,7 @@
 #ifndef XRESOURCE_EDITOR_PANEL_SOURCE_CONTROL_H
 #define XRESOURCE_EDITOR_PANEL_SOURCE_CONTROL_H
 #pragma once
+#include "dependencies/xeditor/include/xeditor/popup.h"
 
 // Source Control panel - Phase 4C/4D of the source-control plan (source_control_abstraction_spec_v1_3.md).
 // An INDEPENDENT tab, not a mode of the Asset Tree/Resource Browser - direct user correction
@@ -1125,7 +1126,7 @@ namespace xresource_editor
             ImGui::OpenPopup("Undo Changes##SCConfirm");
             S.m_bUndoChangesConfirmPending = false;
         }
-        if (ImGui::BeginPopupModal("Undo Changes##SCConfirm", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings))
+        if (xeditor::BeginModal("Undo Changes##SCConfirm"))
         {
             std::vector<const sc_panel_row*> Selected;
             for (auto& Row : AllRows)
