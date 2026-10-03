@@ -16,6 +16,9 @@
 #include <cstdlib>
 #include <chrono>
 #include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <thread>
 #include <deque>
 #include <cwctype>
 #include <iostream>
@@ -547,6 +550,16 @@ namespace xresource_editor
 
                     // Now we can let the system know we are done
                     m_Instance.m_isCompiling = false;
+
+                    // An entry that was queued while this run was ending found m_isCompiling still set, so it did not start another run, and this run had already
+                    // looked at an empty queue: nothing would ever take it, and the resource would stay "waiting" (every later edit of it is ignored while it waits).
+                    // The base OnReset above has let go of the system, so the job can be submitted again from here.
+                    bool bPending = false;
+                    {
+                        xcontainer::lock::scope Lk(std::as_const(m_Instance.m_Queue));
+                        for (const auto& Level : m_Instance.m_Queue.get()) if (Level.size()) { bPending = true; break; }
+                    }
+                    if (bPending) m_Instance.StartCompilation();
                 }
 
                 instance& m_Instance;
@@ -945,6 +958,7 @@ namespace xresource_editor
             std::filesystem::file_time_type     m_DescriptorTime    = {};           // When was last time the descriptor got modified
             std::filesystem::file_time_type     m_ResourceTime      = {};           // When was last time the descriptor got modified
             std::filesystem::file_time_type     m_NewestDependencyTime = {};        // From all its dependencies which is the newest of them all...
+            std::filesystem::file_time_type     m_CompileStarted    = {};           // When the last compile of it began (see RetryFailedIfInputsChanged)
             bool                                m_bHasDescriptor    = {};           // tells the system if it has a descriptor.txt
             bool                                m_bHasResource      = {};           // tells if the resource has been compiled or not
             bool                                m_bHasDependencies  = {};           // Tells if it has a dependency file
@@ -964,6 +978,7 @@ namespace xresource_editor
                 m_DescriptorTime    = {};
                 m_ResourceTime      = {};
                 m_NewestDependencyTime = {};
+                m_CompileStarted    = {};
             }
         };
 
@@ -1041,25 +1056,40 @@ namespace xresource_editor
             }
 
             if (InfoNode.m_NewestDependencyTime > InfoNode.m_ResourceTime || InfoNode.m_DescriptorTime > InfoNode.m_ResourceTime)
+                return QueueForCompilation(InfoNode);
+
+            return false;
+        }
+
+        // Puts the resource in the compilation queue (the caller has decided it needs it and that it is not already in there).
+        bool QueueForCompilation( info_node& InfoNode ) const
+        {
+            if (InfoNode.m_State == library_db::info_node::state::BEEN_EDITED) InfoNode.m_State = library_db::info_node::state::BEEN_EDITED_WAITING_TO_COMPILE;
+            else InfoNode.m_State = library_db::info_node::state::WAITING_TO_COMPILE;
+
+            compilation::entry QueueEntry;
+            QueueEntry.m_FullGuid = InfoNode.m_Info.m_Guid;
+            QueueEntry.m_gLibrary = m_Library.m_GUID;
+            QueueEntry.m_Priority = getQueueIndexFromType(InfoNode.m_Info.m_Guid.m_Type);
+
+            // Insert the entry in the queue
             {
-                if (InfoNode.m_State == library_db::info_node::state::BEEN_EDITED) InfoNode.m_State = library_db::info_node::state::BEEN_EDITED_WAITING_TO_COMPILE;
-                else InfoNode.m_State = library_db::info_node::state::WAITING_TO_COMPILE;
-
-                compilation::entry QueueEntry;
-                QueueEntry.m_FullGuid = InfoNode.m_Info.m_Guid;
-                QueueEntry.m_gLibrary = m_Library.m_GUID;
-                QueueEntry.m_Priority = getQueueIndexFromType(InfoNode.m_Info.m_Guid.m_Type);
-
-                // Insert the entry in the queue
-                {
-                    xcontainer::lock::scope Lk(std::as_const(m_CompilationInstance.m_Queue));
-                    m_CompilationInstance.m_Queue.get()[QueueEntry.m_Priority].push(std::move(QueueEntry));
-                }
-                m_CompilationInstance.StartCompilation();
-
-                return true;
+                xcontainer::lock::scope Lk(std::as_const(m_CompilationInstance.m_Queue));
+                m_CompilationInstance.m_Queue.get()[QueueEntry.m_Priority].push(std::move(QueueEntry));
             }
+            m_CompilationInstance.StartCompilation();
 
+            return true;
+        }
+
+        // A compile that FAILED is tried again when something it is made from changed after it began. An edit that came while it was running found the resource busy and was
+        // ignored (a successful compile looks again when it ends; this is the same for a failed one), and the resource time cannot tell: a failed compile does not move it, so the
+        // moment the attempt began is what the inputs are compared with. A compile that failed on inputs that did not change would fail again, so it is not run again.
+        bool RetryFailedIfInputsChanged( info_node& InfoNode ) const
+        {
+            if (HasNoCompiler(InfoNode.m_Info.m_Guid.m_Type)) return false;
+            if (InfoNode.m_NewestDependencyTime > InfoNode.m_CompileStarted || InfoNode.m_DescriptorTime > InfoNode.m_CompileStarted)
+                return QueueForCompilation(InfoNode);
             return false;
         }
 
@@ -1105,6 +1135,41 @@ namespace xresource_editor
     };
 
     //================================================================================================
+
+    // The watchers read the notifications of the OS on one thread and process them on another. ReadDirectoryChangesW only reports what happens while a read is
+    // pending, so a watcher that processed an event before it read again lost the edits made in between (a descriptor saved twice in a row, the second time while
+    // the first one was being queued for its compile): a stale resource that nothing ever noticed. The reader copies the batch and reads again at once.
+    struct change_queue
+    {
+        std::mutex                      m_Mutex;
+        std::condition_variable         m_Wake;
+        std::deque<std::vector<char>>   m_Batches;
+        bool                            m_bClosed = false;
+
+        void Push(const void* pData, std::size_t Size)
+        {
+            {
+                std::lock_guard Lock(m_Mutex);
+                m_Batches.emplace_back(static_cast<const char*>(pData), static_cast<const char*>(pData) + Size);
+            }
+            m_Wake.notify_one();
+        }
+        void Close()
+        {
+            { std::lock_guard Lock(m_Mutex); m_bClosed = true; }
+            m_Wake.notify_all();
+        }
+        bool Pop(std::vector<char>& Out)                // false when closed and everything was taken
+        {
+            std::unique_lock Lock(m_Mutex);
+            m_Wake.wait(Lock, [&] { return !m_Batches.empty() || m_bClosed; });
+            if (m_Batches.empty()) return false;
+            Out = std::move(m_Batches.front());
+            m_Batches.pop_front();
+            return true;
+        }
+    };
+
 
     struct file_monitor_changes
     {
@@ -1186,35 +1251,10 @@ namespace xresource_editor
             auto buffer = std::make_unique<std::array<int64_t, 4096>>();
             DWORD bytes_returned;
 
-            while( FileMonitorChanges.m_bRunning.load() )
+            change_queue Changes;
+            auto Process = [&](std::vector<char>& Batch)
             {
-                const BOOL result = ReadDirectoryChangesW
-                    ( dir_handle
-                    , buffer.get()
-                    , static_cast<DWORD>(buffer->size() * sizeof(*(buffer->data())))
-                    , TRUE                          // Watch subdirectories
-                    , FILE_NOTIFY_CHANGE_LAST_WRITE
-                    , &bytes_returned
-                    , nullptr
-                    , nullptr
-                    );
-                
-                if (!FileMonitorChanges.m_bRunning.load()) break;
-
-                // Check for errors
-                if (!result) 
-                {
-                    DWORD error = GetLastError();
-                    if (error == ERROR_OPERATION_ABORTED) 
-                    {
-                        std::wcout << L"Operation canceled.\n";
-                        break;
-                    }
-                    std::cerr << "Error: " << error << '\n';
-                    break;
-                }
-
-                FILE_NOTIFY_INFORMATION* notify_info = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(buffer->data());
+                FILE_NOTIFY_INFORMATION* notify_info = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(Batch.data());
                 while( notify_info && FileMonitorChanges.m_bRunning.load() )
                 {
                     // Extract filename from notification
@@ -1350,7 +1390,42 @@ namespace xresource_editor
                         );
                     }
                 }
+            };
+            std::thread Worker([&] { std::vector<char> Batch; while (Changes.Pop(Batch)) Process(Batch); });
+
+            while( FileMonitorChanges.m_bRunning.load() )
+            {
+                const BOOL result = ReadDirectoryChangesW
+                    ( dir_handle
+                    , buffer.get()
+                    , static_cast<DWORD>(buffer->size() * sizeof(*(buffer->data())))
+                    , TRUE                          // Watch subdirectories
+                    , FILE_NOTIFY_CHANGE_LAST_WRITE
+                    , &bytes_returned
+                    , nullptr
+                    , nullptr
+                    );
+                
+                if (!FileMonitorChanges.m_bRunning.load()) break;
+
+                // Check for errors
+                if (!result) 
+                {
+                    DWORD error = GetLastError();
+                    if (error == ERROR_OPERATION_ABORTED) 
+                    {
+                        std::wcout << L"Operation canceled.\n";
+                        break;
+                    }
+                    std::cerr << "Error: " << error << '\n';
+                    break;
+                }
+
+                Changes.Push(buffer.get(), bytes_returned);
             }
+
+            Changes.Close();
+            Worker.join();
 
             CloseHandle(dir_handle);
         }
@@ -1379,35 +1454,10 @@ namespace xresource_editor
             auto buffer = std::make_unique<std::array<int64_t, 4096>>();
             DWORD bytes_returned;
 
-            while (FileMonitorChanges.m_bRunning.load())
+            change_queue Changes;
+            auto Process = [&](std::vector<char>& Batch)
             {
-                const BOOL result = ReadDirectoryChangesW
-                (dir_handle
-                    , buffer.get()
-                    , static_cast<DWORD>(buffer->size() * sizeof(*(buffer->data())))
-                    , TRUE                          // Watch subdirectories
-                    , FILE_NOTIFY_CHANGE_LAST_WRITE
-                    , &bytes_returned
-                    , nullptr
-                    , nullptr
-                );
-
-                if (!FileMonitorChanges.m_bRunning.load()) break;
-
-                // Check for errors
-                if (!result)
-                {
-                    DWORD error = GetLastError();
-                    if (error == ERROR_OPERATION_ABORTED)
-                    {
-                        std::wcout << L"Operation canceled.\n";
-                        break;
-                    }
-                    std::cerr << "Error: " << error << '\n';
-                    break;
-                }
-
-                FILE_NOTIFY_INFORMATION* notify_info = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(buffer->data());
+                FILE_NOTIFY_INFORMATION* notify_info = reinterpret_cast<FILE_NOTIFY_INFORMATION*>(Batch.data());
                 while (notify_info && FileMonitorChanges.m_bRunning.load())
                 {
                     constexpr static std::wstring_view  DescriptorName  = L"descriptor.txt";
@@ -1517,7 +1567,42 @@ namespace xresource_editor
                         );
                     }
                 }
+            };
+            std::thread Worker([&] { std::vector<char> Batch; while (Changes.Pop(Batch)) Process(Batch); });
+
+            while (FileMonitorChanges.m_bRunning.load())
+            {
+                const BOOL result = ReadDirectoryChangesW
+                (dir_handle
+                    , buffer.get()
+                    , static_cast<DWORD>(buffer->size() * sizeof(*(buffer->data())))
+                    , TRUE                          // Watch subdirectories
+                    , FILE_NOTIFY_CHANGE_LAST_WRITE
+                    , &bytes_returned
+                    , nullptr
+                    , nullptr
+                );
+
+                if (!FileMonitorChanges.m_bRunning.load()) break;
+
+                // Check for errors
+                if (!result)
+                {
+                    DWORD error = GetLastError();
+                    if (error == ERROR_OPERATION_ABORTED)
+                    {
+                        std::wcout << L"Operation canceled.\n";
+                        break;
+                    }
+                    std::cerr << "Error: " << error << '\n';
+                    break;
+                }
+
+                Changes.Push(buffer.get(), bytes_returned);
             }
+
+            Changes.Close();
+            Worker.join();
 
             CloseHandle(dir_handle);
         }
@@ -1618,7 +1703,11 @@ namespace xresource_editor
                         {
                             const auto FullPath = std::format(L"{}/{}", LibraryPath, AssetPath);
                             Asset.m_Path            = AssetPath;
-                            Asset.m_LastWriteTime   = std::filesystem::last_write_time(FullPath);
+                            // A dependency that is not there (a cleared cache that kept this resource's output but not the log it depends on, a file that was deleted) used to throw
+                            // here and end the editor at startup. It means the resource has to be compiled again: it is newer than the output by definition.
+                            std::error_code DependencyEc;
+                            Asset.m_LastWriteTime   = std::filesystem::last_write_time(FullPath, DependencyEc);
+                            if (DependencyEc) Asset.m_LastWriteTime = std::filesystem::file_time_type::clock::now();
                             NewestDependencyTime    = std::max(NewestDependencyTime, Asset.m_LastWriteTime);
                         }
                         , [&](library_db::asset& Asset)
@@ -3829,6 +3918,7 @@ namespace xresource_editor
             {
                 if ( static_cast<std::uint8_t>(Node.m_State)&1) Node.m_State = library_db::info_node::state::BEEN_EDITED_COMPILING;
                 else                                            Node.m_State = library_db::info_node::state::COMPILING;
+                Node.m_CompileStarted = std::filesystem::file_time_type::clock::now();
 
                 // Set the actual string of the descriptor
                 auto Skip = LibMgr.m_ProjectPath.size() + 1;
@@ -4157,7 +4247,8 @@ namespace xresource_editor
                                                 , [&](library_db::asset& Asset)
                                                 {
                                                     Asset.m_Path          = E;
-                                                    Asset.m_LastWriteTime = std::filesystem::last_write_time( std::format( L"{}//{}", LibraryDB->m_Library.m_Path, Asset.m_Path) );
+                                                    std::error_code DependencyEc;                                  // a compiler that listed a file that is not there must not end the editor
+                                                    Asset.m_LastWriteTime = std::filesystem::last_write_time( std::format( L"{}//{}", LibraryDB->m_Library.m_Path, Asset.m_Path), DependencyEc );
                                                 }
                                                 , [&](library_db::asset& Asset)
                                                 {
@@ -4216,6 +4307,7 @@ namespace xresource_editor
                             else
                             {
                                 // Fail to compile... nonetheless is the end of the compilation process...
+                                LibraryDB->RetryFailedIfInputsChanged(Node);
                                 LibMgr.m_OnCompilationState.NotifyAll(LibMgr, LibraryDB->m_Library.m_GUID, Node.m_Info.m_Guid, NewEntry.m_Log);
                             }
                         }))
