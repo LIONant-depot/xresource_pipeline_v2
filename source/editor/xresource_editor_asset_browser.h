@@ -291,6 +291,13 @@ namespace xresource_editor
         virtual void LeftPanel()    = 0;
         virtual void RightPanel()   = 0;
 
+        // Makes the tab show this resource: its folder is the current one (reached the way a click on the folder reaches it, so the history stays as it is: Back goes where it always went), the
+        // search and the type filter that would hide it are cleared, and it is the selection, scrolled into view. False when the tab cannot (the resource is in the trash, or in no open library).
+        virtual bool Reveal(xresource::full_guid Guid) noexcept { (void)Guid; return false; }
+
+        // Where the tab is, as lines of text ("Folder=...", "Selected=...", "History=..."): what the GetBrowserState command shows.
+        virtual std::string Describe() noexcept { return {}; }
+
         asset_browser_tab_base( asset_browser& Browser, const char* pName ) : m_Browser{ Browser }, m_pName(pName){}
 
         asset_browser&     m_Browser;
@@ -474,6 +481,22 @@ namespace xresource_editor
 
         // Draw one DOCKABLE tab's body into the *current* ImGui window (Host Drawer tab).
         // TabKey matches a substring of the tab label (e.g. "Resources", "Assets", "Compilation").
+        // The state of the browser as text: the filters, and what the tab that browses the resources says of where it is.
+        std::string DescribeBrowser() noexcept
+        {
+            std::string Out = std::format("Search={}\nTypeFilter={}\n", m_SearchString, m_FilterByType.size());
+            for (auto& p : m_Tabs) if (p) Out += p->Describe();
+            return Out;
+        }
+
+        // The resource, shown and selected in the first tab that can show it (the Resources tab). See asset_browser_tab_base::Reveal.
+        bool RevealResource(xresource::full_guid Guid) noexcept
+        {
+            for (auto& p : m_Tabs)
+                if (p && p->Reveal(Guid)) return true;
+            return false;
+        }
+
         void RenderEmbeddedTab(xresource_editor::library_mgr& AssetMgr, xresource::mgr& ResourceMgr, const char* TabKey) noexcept
         {
             EnsureInitialized(AssetMgr, ResourceMgr);

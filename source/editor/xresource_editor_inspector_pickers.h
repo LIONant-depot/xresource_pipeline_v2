@@ -7,6 +7,7 @@
 #include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_asset_browser.h"
 #include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
 
+#include <functional>
 #include <span>
 #include <string>
 
@@ -33,11 +34,110 @@ namespace xresource_editor
         if (Out.empty()) Out = std::format("{:X}", FullGuid.m_Instance.m_Value);
     }
 
-    inline void RenderResourceWigzmos(bool& bOpen, const xresource::full_guid& PreFullGuid)
+    //---------------------------------------------------------------------------
+    // The resource reference of an inspector: ONE widget for every property that references a resource. What it needs from the application (the picture of a resource, opening its editor, finding it
+    // in the resource browser) comes through these hooks, which the application fills once; without them the widget is the name and the picker only.
+    //---------------------------------------------------------------------------
+    struct reference_host
     {
+        std::function<plugin_icon_ref(xresource::full_guid)>    m_Thumbnail;        // the picture of the resource itself, when it has one that is ready (invalid: not yet)
+        std::function<bool(xresource::type_guid)>               m_HasEditor;        // the type of resource has an editor
+        std::function<void(xresource::full_guid)>               m_OpenEditor;       // open (or bring forward) the editor of the resource
+        std::function<bool(xresource::full_guid)>               m_Locate;           // find the resource in the resource browser (of the drawer): false when it cannot be shown there
+    };
+    inline reference_host g_ReferenceHost;
+
+    // Draws the picture of a resource: its own thumbnail when it has one, the picture of its type otherwise.
+    inline void RenderReferencePicture(const xresource::full_guid& Guid, float Size) noexcept
+    {
+        plugin_icon_ref Picture;
+        if (g_ReferenceHost.m_Thumbnail && !Guid.empty()) Picture = g_ReferenceHost.m_Thumbnail(Guid);
+        if (!Picture.isValid()) Picture = xresource_editor::g_LibMgr.m_AssetPluginsDB.getIconRef(Guid.m_Type, 0);
+        if (Picture.isValid())
+            ImGui::Image((ImTextureRef)(void*)Picture.m_pTexture, ImVec2(Size, Size), ImVec2(Picture.m_U0, Picture.m_V0), ImVec2(Picture.m_U1, Picture.m_V1));
+        else
+            ImGui::Dummy(ImVec2(Size, Size));
+    }
+
+    // A resource reference: the picture, the name (a press opens the picker), and the actions of the reference: open the resource in its editor, find it in the resource browser, clear the
+    // reference. Big: the picture beside two lines, the name with the clear button at its right, and the two buttons under it. Small (the property's SMALL_RESOURCE flag, for lists where a row
+    // has no room): one line, the actions in the menu of a button at the right of the name.
+    inline void RenderResourceReference(xproperty::inspector& Inspector, bool& bOpen, const xresource::full_guid& PreFullGuid) noexcept
+    {
+        constexpr const char* OpenIcon = "\xEE\x9C\x8F", * LocateIcon = "\xEE\xA0\xB8", * ClearIcon = "\xEE\x9C\x91", * MenuIcon = "\xEE\x9C\x92";    // Segoe MDL2: Edit, FolderOpen, Cancel, More
+
+        const bool bSmall = Inspector.m_CurrentProperty.m_Flags.m_bSmallResource;
+        const bool bNone  = PreFullGuid.empty();
         std::string Name;
         RemapGUIDToString(Name, PreFullGuid);
-        bOpen = ImGui::Button(Name.c_str(), ImVec2(-1, 0));
+        const auto  Full  = bNone ? PreFullGuid : xresource::g_Mgr.getFullGuid(PreFullGuid);
+        bool bKnown = false;
+        if (!bNone) xresource_editor::g_LibMgr.getNodeInfo(Full, [&](xresource_editor::library_db::info_node&) { bKnown = true; });
+
+        const bool bCanOpen   = bKnown && g_ReferenceHost.m_OpenEditor && g_ReferenceHost.m_HasEditor && g_ReferenceHost.m_HasEditor(Full.m_Type);
+        const bool bCanLocate = bKnown && g_ReferenceHost.m_Locate;
+        const auto Open       = [&] { g_ReferenceHost.m_OpenEditor(Full); };
+        const auto Locate     = [&] { g_ReferenceHost.m_Locate(Full); };
+
+        const auto& Style = ImGui::GetStyle();
+        const float Line  = ImGui::GetFrameHeight();
+        ImGui::PushID(reinterpret_cast<const void*>(std::hash<std::string_view>{}(Inspector.m_CurrentProperty.m_Path)));
+
+        // The name button: red when the reference names a resource that no open library has.
+        const auto NameButton = [&](float Width, float Height)
+        {
+            const bool bBroken = !bNone && !bKnown;
+            if (bBroken) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.45f, 0.42f, 1.0f));
+            bOpen = ImGui::Button((Name + "###name").c_str(), ImVec2(Width, Height));
+            if (bBroken) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered() && bBroken) ImGui::SetTooltip("No open library has this resource");
+        };
+        const auto Tip = [](const char* pText) { if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", pText); };
+
+        if (bSmall)
+        {
+            RenderReferencePicture(Full, Line);
+            ImGui::SameLine();
+            NameButton(-(Line + Style.ItemSpacing.x), 0.0f);
+            ImGui::SameLine();
+            if (ImGui::Button(MenuIcon, ImVec2(Line, 0.0f))) ImGui::OpenPopup("##referencemenu");
+            Tip("Open in its editor, find in the resource browser, clear");
+            if (ImGui::BeginPopup("##referencemenu"))
+            {
+                if (ImGui::MenuItem("Open in its editor", nullptr, false, bCanOpen)) Open();
+                if (ImGui::MenuItem("Find in the resource browser", nullptr, false, bCanLocate)) Locate();
+                ImGui::Separator();
+                if (ImGui::MenuItem("Clear", nullptr, false, !bNone)) Inspector.m_CurrentProperty.m_bClearResource = true;
+                ImGui::EndPopup();
+            }
+        }
+        else
+        {
+            const float Picture = xproperty::inspector::ResourceRowHeight(false);          // as tall as the label at its left
+            ImGui::BeginGroup();
+            RenderReferencePicture(Full, Picture);
+            ImGui::SameLine();
+            ImGui::BeginGroup();
+            NameButton(-(Line + Style.ItemSpacing.x), Line);
+            ImGui::SameLine();
+            ImGui::BeginDisabled(bNone);
+            if (ImGui::Button(ClearIcon, ImVec2(Line, Line))) Inspector.m_CurrentProperty.m_bClearResource = true;
+            ImGui::EndDisabled();
+            Tip("Clear the reference");
+
+            ImGui::BeginDisabled(!bCanOpen);
+            if (ImGui::Button(OpenIcon, ImVec2(Line * 1.5f, Line))) Open();
+            ImGui::EndDisabled();
+            Tip(bCanOpen ? "Open the resource in its editor" : "This resource has no editor");
+            ImGui::SameLine();
+            ImGui::BeginDisabled(!bCanLocate);
+            if (ImGui::Button(LocateIcon, ImVec2(Line * 1.5f, Line))) Locate();
+            ImGui::EndDisabled();
+            Tip("Find the resource in the resource browser");
+            ImGui::EndGroup();
+            ImGui::EndGroup();
+        }
+        ImGui::PopID();
     }
 
     inline xresource_editor::asset_browser g_AssetBrowserPopup;
@@ -112,9 +212,10 @@ namespace xresource_editor
     // editor.
     inline void WireResourcePickerCallbacks(xproperty::inspector& Inspector) noexcept
     {
-        Inspector.m_OnResourceWigzmos.Register<[](xproperty::inspector&, const xproperty::type::object&, void*, std::string_view, bool& bOpen, const xresource::full_guid& PreFullGuid)
+        Inspector.m_OnResourceWigzmos.m_Delegates.clear();      // an editor that wired another widget before gets this one: the reference is ONE widget for the whole system
+        Inspector.m_OnResourceWigzmos.Register<[](xproperty::inspector& Insp, const xproperty::type::object&, void*, std::string_view, bool& bOpen, const xresource::full_guid& PreFullGuid)
         {
-            xresource_editor::RenderResourceWigzmos(bOpen, PreFullGuid);
+            xresource_editor::RenderResourceReference(Insp, bOpen, PreFullGuid);
         }>();
         Inspector.m_OnResourceBrowser.Register<[](xproperty::inspector&, const xproperty::type::object&, void*, std::string_view Path, bool& bOpen, xresource::full_guid& Out, std::span<const xresource::type_guid> Filters)
         {

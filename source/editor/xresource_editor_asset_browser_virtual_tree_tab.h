@@ -710,6 +710,55 @@ namespace xresource_editor
 
         //=============================================================================
 
+        std::string Describe() noexcept override
+        {
+            std::string Out = std::format("Folder={}\nSelected={}\nHistory={}/{}\n", BuildPathString(m_SelectedLibrary, m_ParentGUID)
+                , m_SelectedItems.empty() ? std::string("none") : std::format("{:016X}{:016X}", m_SelectedItems[0].m_Instance.m_Value, m_SelectedItems[0].m_Type.m_Value)
+                , m_PathHistoryList.empty() ? 0u : m_PathHistoryIndex + 1u, m_PathHistoryList.size());
+            for (const auto& E : m_PathHistoryList) Out += std::format("HistoryEntry={}\n", BuildPathString(E.m_gLibrary, E.m_gFolder));
+            return Out;
+        }
+
+        bool Reveal(xresource::full_guid Guid) noexcept override
+        {
+            if (Guid.empty()) return false;
+
+            // The library that has it, and the folder it is in (the first folder link of the resource; none: the root). The trash is not browsed here.
+            library::guid Library = {};
+            xresource_editor::folder::guid Folder = {};
+            bool bFound = false, bTrashed = false;
+            for (auto& Lib : m_AssetMgr.m_mLibraryDB)
+            {
+                Lib.second->m_InfoByTypeDataBase.FindAsReadOnly(Guid.m_Type, [&](const std::unique_ptr<library_db::info_db>& InfoDB)
+                {
+                    InfoDB->m_InfoDataBase.FindAsReadOnly(Guid.m_Instance, [&](const library_db::info_node& Node)
+                    {
+                        bFound  = true;
+                        Library = Lib.first;
+                        for (auto& Link : Node.m_Info.m_RscLinks)
+                        {
+                            if (Link == xresource_editor::folder::trash_guid_v) { bTrashed = true; break; }
+                            if (Link.m_Type == xresource_editor::folder::type_guid_v) { Folder = xresource_editor::folder::guid{ Link.m_Instance }; break; }
+                        }
+                    });
+                });
+                if (bFound) break;
+            }
+            if (!bFound || bTrashed) return false;
+
+            // What would hide it is cleared: the search text, and a type filter that does not include its type.
+            m_Browser.m_SearchString.clear();
+            if (!m_Browser.m_FilterByType.empty() && std::ranges::find(m_Browser.m_FilterByType, Guid.m_Type) == m_Browser.m_FilterByType.end()) m_Browser.m_FilterByType.clear();
+            m_SelectedType.clear();
+
+            PathHistoryUpdate(Library, Folder);         // the folder is now the current one, as if it had been clicked (a no-op for the history when it already is)
+            m_SelectedItems.assign(1, Guid);
+            m_ScrollTo = Guid;
+            return true;
+        }
+
+        //=============================================================================
+
         std::string BuildPathString( xresource_editor::library::guid gLibrary, xresource_editor::folder::guid gFolder )
         {
             std::string FolderName;
@@ -2059,6 +2108,7 @@ namespace xresource_editor
                     if (ImGui::IsRectVisible(TileMin, ImVec2(TileMin.x + button_sz.x, TileMin.y + button_sz.y)))
                         E.m_Thumbnail = m_Browser.m_OnRequestThumbnail(E.m_ResourceGUID);
                 }
+                if (!m_ScrollTo.empty() && m_ScrollTo == E.m_ResourceGUID) { ImGui::SetScrollHereY(0.5f); m_ScrollTo = {}; }      // Reveal: bring the tile into view
                 const xresource_editor::plugin_icon_ref& DrawIcon = E.m_Thumbnail.isValid() ? E.m_Thumbnail : E.m_Icon;
                 // Only when the big image is a computed per-resource thumbnail - type-as-thumbnail
                 // tiles already show the type glyph up top, so they get no label prefix icon.
@@ -2903,6 +2953,7 @@ namespace xresource_editor
         int                                                 m_CouldDownTimer        = {};
         library::guid                                       m_SelectedLibrary       = {};
         std::vector<xresource::full_guid>                   m_SelectedItems         = {};
+        xresource::full_guid                                m_ScrollTo              = {};   // a resource to bring into view when its tile is drawn (Reveal)
         folder::guid                                        m_ParentGUID            = {};
         sort_base_on                                        m_ShortBasedOn          = sort_base_on::NAME_ASCENDING;
         std::unordered_map<xresource_editor::folder::guid, bool>         m_IsTreeNodeOpen        = {};
