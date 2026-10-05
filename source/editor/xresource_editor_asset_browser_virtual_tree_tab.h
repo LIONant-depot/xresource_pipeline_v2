@@ -1592,7 +1592,9 @@ namespace xresource_editor
 
             ImGui::SameLine(0, 4.0f);
             if (!bDirty) ImGui::BeginDisabled();
+            const int nPulse = bDirty ? xeditor::PushSavePulse() : 0;               // unsaved: it breathes towards green
             if (ImGui::Button((std::string(" ") + xeditor::save_icon_v + " ").c_str())) { xproperty::settings::context Context; m_AssetMgr.Save(Context); }
+            if (nPulse) ImGui::PopStyleColor(nPulse);
             if (!bDirty) ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
                 xeditor::hint::Text(bDirty ? "Save the renames and moves of the resources (they are only in memory until then)" : "Nothing to save: the renames and moves are saved");
