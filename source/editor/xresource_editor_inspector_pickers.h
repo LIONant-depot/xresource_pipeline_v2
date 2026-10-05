@@ -7,6 +7,9 @@
 #include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_asset_browser.h"
 #include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
 
+#include <cwchar>
+#include <cwctype>
+#include <filesystem>
 #include <functional>
 #include <span>
 #include <string>
@@ -138,6 +141,156 @@ namespace xresource_editor
             ImGui::EndGroup();
         }
         ImGui::PopID();
+    }
+
+    //---------------------------------------------------------------------------
+    // The asset reference of an inspector: ONE widget for every property that names a source file of the project (xproperty::ui::g_AssetFileWidget, which InstallAssetFileWidget sets), the
+    // twin of the resource reference above. What it needs from the application (open the file the way the Assets tab does, find it in the Assets tab) comes through these hooks, which the
+    // application fills once; without them the actions are off.
+    //---------------------------------------------------------------------------
+    struct asset_reference_host
+    {
+        std::function<bool(const std::wstring&)>    m_Open;         // open the file as a double click on it in the Assets tab does; false when no library has it
+        std::function<bool(const std::wstring&)>    m_Locate;       // find the file in the Assets tab (of the drawer); false when it cannot be shown there
+    };
+    inline asset_reference_host g_AssetReferenceHost;
+
+    // The file a descriptor names ("Assets\Folder\file.png", relative to its library, or a full path) on disk; empty when no open library has it.
+    inline std::filesystem::path ResolveAssetFile(const std::wstring& Path) noexcept
+    {
+        if (Path.empty()) return {};
+        std::error_code Ec;
+        const std::filesystem::path Given(Path);
+        if (Given.is_absolute()) return std::filesystem::exists(Given, Ec) ? Given : std::filesystem::path{};
+        for (auto& L : xresource_editor::g_LibMgr.m_mLibraryDB)
+        {
+            auto Candidate = std::filesystem::path(L.second->m_Library.m_Path) / Given;
+            if (std::filesystem::exists(Candidate, Ec)) return Candidate;
+        }
+        return {};
+    }
+
+    // Whether a file name is one of the types of a file dialog filter ("Name\0*.png;*.jpg\0Name2\0*.tga\0\0"): the property takes a file of those types. No filter: every file.
+    inline bool AssetFilterAccepts(const wchar_t* pFilter, const std::filesystem::path& File) noexcept
+    {
+        if (pFilter == nullptr) return true;
+        auto Lower = [](std::wstring s) { for (auto& c : s) c = static_cast<wchar_t>(std::towlower(c)); return s; };
+        const std::wstring Name = Lower(File.filename().wstring());
+        for (const wchar_t* p = pFilter; *p; )
+        {
+            p += std::wcslen(p) + 1;                                    // the name of the group
+            if (!*p) break;
+            std::wstring_view Patterns(p);
+            p += Patterns.size() + 1;
+            while (!Patterns.empty())
+            {
+                const auto End     = Patterns.find(L';');
+                auto Pattern = Lower(std::wstring(Patterns.substr(0, End)));
+                Pattern.erase(0, Pattern.find_first_not_of(L" \t"));                    // the filters of the descriptors have a space after each ";" (" *.png; *.tga")
+                Pattern.erase(Pattern.find_last_not_of(L" \t") + 1);
+                if (Pattern == L"*" || Pattern == L"*.*") return true;
+                if (Pattern.size() > 1 && Pattern[0] == L'*' && Name.size() >= Pattern.size() - 1 && Name.compare(Name.size() - (Pattern.size() - 1), std::wstring::npos, Pattern, 1, std::wstring::npos) == 0) return true;
+                if (End == std::wstring_view::npos) break;
+                Patterns.remove_prefix(End + 1);
+            }
+        }
+        return false;
+    }
+
+    // The file dropped on the widget, from the Assets tab ("XRESOURCE_EDITOR_ASSET_FILE_DRAG"): the path the property keeps for it. False when what is dragged is not a file of the types the property takes.
+    inline bool AcceptDroppedAssetFile(const xproperty::ui::asset_file_request& Request, std::wstring& Out) noexcept
+    {
+        if (!ImGui::BeginDragDropTarget()) return false;
+        bool bTaken = false;
+        if (const ImGuiPayload* pPayload = ImGui::GetDragDropPayload(); pPayload && pPayload->IsDataType("XRESOURCE_EDITOR_ASSET_FILE_DRAG") && pPayload->DataSize == sizeof(asset_file_drag_payload))
+        {
+            const auto& Drag = *static_cast<const asset_file_drag_payload*>(pPayload->Data);
+            const std::filesystem::path Rel(Drag.m_SourcePath);
+            std::error_code Ec;
+            for (auto& L : xresource_editor::g_LibMgr.m_mLibraryDB)
+            {
+                if (L.first != Drag.m_Library) continue;
+                const std::filesystem::path Root = L.second->m_Library.m_Path;
+                const auto Full = Root / L"Assets" / Rel;
+                if (std::filesystem::is_directory(Full, Ec) || !std::filesystem::exists(Full, Ec) || !AssetFilterAccepts(Request.m_pFilter, Full)) break;
+                if (ImGui::AcceptDragDropPayload("XRESOURCE_EDITOR_ASSET_FILE_DRAG"))
+                {
+                    Out    = Request.m_bMakePathRelative ? (std::filesystem::path(L"Assets") / Rel).wstring() : Full.wstring();
+                    bTaken = true;
+                }
+                break;
+            }
+        }
+        ImGui::EndDragDropTarget();
+        return bTaken;
+    }
+
+    // An asset reference: the name of the file on a line (a press opens the file dialog to choose another; the clear button at its right), and under it the actions: open the file the way the
+    // Assets tab does, find it in the Assets tab. Dropping a file of the types the property takes from the Assets tab on it sets the property. As tall as the resource reference: two lines.
+    inline bool RenderAssetReference(xproperty::inspector& Inspector, const xproperty::ui::asset_file_request& Request, std::wstring& NewValue) noexcept
+    {
+        constexpr const char* OpenIcon = "\xEE\x9C\x8F", * LocateIcon = "\xEE\xA0\xB8", * ClearIcon = "\xEE\x9C\x91";    // Segoe MDL2: Edit, FolderOpen, Cancel
+
+        const bool bNone   = Request.m_Value.empty();
+        const auto Resolved = ResolveAssetFile(Request.m_Value);
+        const bool bKnown  = !Resolved.empty();
+        const bool bCanOpen   = bKnown && g_AssetReferenceHost.m_Open;
+        const bool bCanLocate = bKnown && g_AssetReferenceHost.m_Locate;
+
+        const auto& Style = ImGui::GetStyle();
+        const float Line  = ImGui::GetFrameHeight();
+        const auto  Tip   = [](const char* pText) { if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", pText); };
+        bool bChanged = false;
+
+        std::string Name = "(none)";
+        if (!bNone) Name = std::filesystem::path(Request.m_Value).filename().string();
+
+        ImGui::PushID(reinterpret_cast<const void*>(std::hash<std::string_view>{}(Inspector.m_CurrentProperty.m_Path)));
+        ImGui::BeginGroup();
+
+        // The name: red when the property names a file that no open library has.
+        const bool bBroken = !bNone && !bKnown;
+        if (bBroken) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.45f, 0.42f, 1.0f));
+        const bool bPick = ImGui::Button((Name + "###name").c_str(), ImVec2(-(Line + Style.ItemSpacing.x), Line));
+        if (bBroken) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        {
+            const std::string Full = bNone ? std::string("No file. Press to choose one, or drop one from the Assets tab") : std::filesystem::path(Request.m_Value).string();
+            ImGui::SetTooltip("%s%s", Full.c_str(), bBroken ? "\nNo open library has this file" : "");
+        }
+        if (bPick)
+        {
+            std::wstring Chosen;
+            if (Request.m_Browse && Request.m_Browse(Chosen)) { NewValue = Chosen; bChanged = true; }
+        }
+
+        ImGui::SameLine();
+        ImGui::BeginDisabled(bNone);
+        if (ImGui::Button(ClearIcon, ImVec2(Line, Line))) { NewValue.clear(); bChanged = true; }
+        ImGui::EndDisabled();
+        Tip("Clear the file");
+
+        ImGui::BeginDisabled(!bCanOpen);
+        if (ImGui::Button(OpenIcon, ImVec2(Line * 1.5f, Line))) g_AssetReferenceHost.m_Open(Request.m_Value);
+        ImGui::EndDisabled();
+        Tip(bCanOpen ? "Open the file, as the Assets tab does" : "There is no such file in the open libraries");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!bCanLocate);
+        if (ImGui::Button(LocateIcon, ImVec2(Line * 1.5f, Line))) g_AssetReferenceHost.m_Locate(Request.m_Value);
+        ImGui::EndDisabled();
+        Tip("Find the file in the Assets tab");
+
+        ImGui::EndGroup();
+        std::wstring Dropped;
+        if (AcceptDroppedAssetFile(Request, Dropped)) { NewValue = Dropped; bChanged = true; }
+        ImGui::PopID();
+        return bChanged;
+    }
+
+    // Makes this widget the one of every property that names a file of the assets (xproperty::ui::g_AssetFileWidget). The application calls it once, where it fills g_AssetReferenceHost.
+    inline void InstallAssetFileWidget() noexcept
+    {
+        xproperty::ui::g_AssetFileWidget.m_Draw = &RenderAssetReference;
     }
 
     inline xresource_editor::asset_browser g_AssetBrowserPopup;

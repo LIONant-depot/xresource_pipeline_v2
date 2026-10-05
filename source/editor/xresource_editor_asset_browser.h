@@ -285,6 +285,15 @@ namespace xresource_editor
         inline constinit static external_drop_registration_base* g_pHead = nullptr;
     };
 
+    // What a file (or folder) dragged out of the Assets tab carries ("XRESOURCE_EDITOR_ASSET_FILE_DRAG"): a small POD (ImGui copies it) naming the library and the path, relative to the
+    // library's Assets folder, of the row the drag started on. Whoever takes the drop (the Assets tab itself, the asset reference of an inspector) reads it as this.
+    struct asset_file_drag_payload
+    {
+        library::guid m_Library;
+        wchar_t       m_SourcePath[520];    // Assets-relative path of the row the drag started on
+        bool          m_bWholeSelection;    // true = drag the whole active multi-selection of the tab instead
+    };
+
     // asset browser tab base
     struct asset_browser_tab_base
     {
@@ -297,6 +306,13 @@ namespace xresource_editor
         // Makes the tab show this resource: its folder is the current one (reached the way a click on the folder reaches it, so the history stays as it is: Back goes where it always went), the
         // search and the type filter that would hide it are cleared, and it is the selection, scrolled into view. False when the tab cannot (the resource is in the trash, or in no open library).
         virtual bool Reveal(xresource::full_guid Guid) noexcept { (void)Guid; return false; }
+
+        // The same for a file of the Assets folder (the Assets tab): Path is what a descriptor keeps ("Assets\Folder\file.png", relative to the library, or a full path). False when no library
+        // has the file.
+        virtual bool RevealFile(const std::wstring& Path) noexcept { (void)Path; return false; }
+
+        // Opens the file the way a double click on it in the tab does (the lock-before-edit gate included). False when no library has it.
+        virtual bool OpenFile(const std::wstring& Path) noexcept { (void)Path; return false; }
 
         // Where the tab is, as lines of text ("Folder=...", "Selected=...", "History=..."): what the GetBrowserState command shows.
         virtual std::string Describe() noexcept { return {}; }
@@ -497,6 +513,22 @@ namespace xresource_editor
         {
             for (auto& p : m_Tabs)
                 if (p && p->Reveal(Guid)) return true;
+            return false;
+        }
+
+        // The file, shown and selected in the first tab that can show it (the Assets tab). See asset_browser_tab_base::RevealFile.
+        bool RevealAssetFile(const std::wstring& Path) noexcept
+        {
+            for (auto& p : m_Tabs)
+                if (p && p->RevealFile(Path)) return true;
+            return false;
+        }
+
+        // The file, opened as a double click in the Assets tab opens it. See asset_browser_tab_base::OpenFile.
+        bool OpenAssetFile(const std::wstring& Path) noexcept
+        {
+            for (auto& p : m_Tabs)
+                if (p && p->OpenFile(Path)) return true;
             return false;
         }
 

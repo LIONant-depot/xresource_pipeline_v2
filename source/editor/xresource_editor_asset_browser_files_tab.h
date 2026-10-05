@@ -411,6 +411,65 @@ namespace xresource_editor
             return (std::filesystem::path(L"Assets") / RelToAssets).wstring();
         }
 
+        // The file a descriptor names ("Assets\Folder\file.png", relative to its library; or a full path) in the libraries that are open: which library has it and where it is relative to its
+        // Assets folder. False when no library has it (or it is not under an Assets folder).
+        bool FindFile(const std::wstring& Path, library::guid& OutLibrary, std::filesystem::path& OutRelToAssets) const noexcept
+        {
+            if (Path.empty()) return false;
+            std::error_code Ec;
+            for (auto& L : m_AssetMgr.m_mLibraryDB)
+            {
+                const std::filesystem::path Root = L.second->m_Library.m_Path;
+                const std::filesystem::path Given(Path);
+                const auto Candidate = Given.is_absolute() ? Given : Root / Given;
+                if (!std::filesystem::exists(Candidate, Ec)) continue;
+                const auto Rel = Candidate.lexically_normal().lexically_relative((Root / L"Assets").lexically_normal());
+                if (Rel.empty() || *Rel.begin() == L"..") continue;
+                OutLibrary     = L.first;
+                OutRelToAssets = Rel;
+                return true;
+            }
+            return false;
+        }
+
+        // Where the tab is, for GetBrowserState: the folder (relative to the Assets folder of its library) and the selected file.
+        std::string Describe() noexcept override
+        {
+            return std::format("AssetsFolder={}\nAssetsSelected={}\n", m_SelectedFolder.string(), std::filesystem::path(m_SelectedFile).string());
+        }
+
+        bool RevealFile(const std::wstring& Path) noexcept override
+        {
+            library::guid Library{};
+            std::filesystem::path Rel;
+            if (!FindFile(Path, Library, Rel)) return false;
+
+            m_Browser.m_SearchString.clear();                        // what would hide it
+            m_bBrowsingTrash = false;
+            PathHistoryUpdate(Library, Rel.parent_path(), false);    // its folder is now the current one, as if it had been clicked
+            SelectSingle(Rel.filename().wstring());
+            m_SelectedFile  = Rel.filename().wstring();
+            m_ScrollToFile  = m_SelectedFile;
+            return true;
+        }
+
+        bool OpenFile(const std::wstring& Path) noexcept override
+        {
+            library::guid Library{};
+            std::filesystem::path Rel;
+            if (!FindFile(Path, Library, Rel)) return false;
+            for (auto& L : m_AssetMgr.m_mLibraryDB)
+                if (L.first == Library)
+                {
+                    const auto Previous = m_SelectedLibrary;       // the gate asks which library the file is in
+                    m_SelectedLibrary = Library;
+                    TryOpenFile(std::filesystem::path(L.second->m_Library.m_Path) / L"Assets" / Rel, ToLibraryRelPath(Rel), false);
+                    if (!m_PendingOpenConfirm) m_SelectedLibrary = Previous;     // a refused open waits for the person's answer, which needs the library
+                    return true;
+                }
+            return false;
+        }
+
         // Recomputes ONE row's source-control badges - called only from RightPanel()'s own batch
         // refresh (revision-gated, see file_entry's own comment), never per-frame. Folders always
         // report None/None (no git status of their own worth showing).
@@ -878,12 +937,7 @@ namespace xresource_editor
         // general, first-class rule for the RIGHT panel, per this phase's own survey notes on the
         // existing (narrower) entity-drag precedent in E29_PrefabAuthoring.h - the LEFT tree has no
         // multi-select concept of its own, so a tree drag is always exactly the one folder.
-        struct file_drag_payload
-        {
-            library::guid m_Library;
-            wchar_t       m_SourcePath[520];    // Assets-relative path of the row the drag started on
-            bool          m_bWholeSelection;    // true = drag the whole active RIGHT-panel multi-selection instead
-        };
+        using file_drag_payload = xresource_editor::asset_file_drag_payload;      // shared with whoever takes the drop (see its comment)
 
         std::vector<std::filesystem::path> ResolveDragSources(const file_drag_payload& Payload) const noexcept
         {
@@ -1738,6 +1792,7 @@ namespace xresource_editor
                     {
                         ImGui::PushID(E.m_Name.c_str());
                         ImGui::TableNextRow();
+                        if (!m_ScrollToFile.empty() && m_ScrollToFile == E.m_Name) { ImGui::TableSetColumnIndex(0); ImGui::SetScrollHereY(0.5f); m_ScrollToFile.clear(); }      // RevealFile: bring the row into view
 
                         // Captured right after THIS row's own Selectable (below), before anything else
                         // (the "#N" dependent badge, drag/drop handling, ...) gets a chance to become
@@ -1800,6 +1855,28 @@ namespace xresource_editor
                             if (!bIsRenamingThis) ImGui::PushStyleColor(ImGuiCol_Text, bEmpty ? ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled) : ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // white - direct user request
                         }
 
+                        // The drag source of the row (see the long comment where it was: only after a drag of 12 pixels). It must be asked right after the Selectable of the row, while the Selectable
+                        // is the last item: BeginDragDropSource() and IsItemActive() are about the last item, and the badge that follows the name of a file with dependents (#N) is not the row - a file
+                        // with that badge could not be dragged at all.
+                        const auto RowDragSource = [&]
+                        {
+                            if (!m_bBrowsingTrash && ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 12.0f) && ImGui::BeginDragDropSource())
+                            {
+                                file_drag_payload Payload{};
+                                Payload.m_Library = m_SelectedLibrary;
+                                wcsncpy_s(Payload.m_SourcePath, (m_SelectedFolder / E.m_Name).wstring().c_str(), _TRUNCATE);
+                                Payload.m_bWholeSelection = bMultiSelected && m_MultiSelected.size() > 1;
+
+                                ImGui::SetDragDropPayload("XRESOURCE_EDITOR_ASSET_FILE_DRAG", &Payload, sizeof(Payload));
+                                ImGui::TextUnformatted(Payload.m_bWholeSelection ? std::format("{} items", m_MultiSelected.size()).c_str() : Name.c_str());
+                                ImGui::EndDragDropSource();
+
+                                // OS-level drag-out (Phase 6) - see IsCursorOutsideMainWindow's own comment.
+                                if (IsCursorOutsideMainWindow())
+                                    RunOsFileDragOut(AssetsRoot, Payload);
+                            }
+                        };
+
                         if (bIsRenamingThis)
                         {
                             // Inline rename (5B) - swaps the Selectable for an InputText over this one
@@ -1861,6 +1938,7 @@ namespace xresource_editor
                                     else
                                         HandleRowClick(SortedNames, E.m_Name);
                                 }
+                                RowDragSource();
                                 bWantRowContext = ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right); // release, not press - matches BeginPopupContextItem's own convention; trash mode still wants this too, see the Restore popup below
 
                                 // Persistent dependency indicator + its own detail-on-hover (Phase 6,
@@ -1921,21 +1999,8 @@ namespace xresource_editor
                             // BeginDragDropSource() is simply never invoked during a plain click and
                             // g.DragDropActive never gets set, leaving Selectable()'s normal click-release
                             // path completely untouched.
-                            if (!m_bBrowsingTrash && ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 12.0f) && ImGui::BeginDragDropSource())
-                            {
-                                file_drag_payload Payload{};
-                                Payload.m_Library = m_SelectedLibrary;
-                                wcsncpy_s(Payload.m_SourcePath, (m_SelectedFolder / E.m_Name).wstring().c_str(), _TRUNCATE);
-                                Payload.m_bWholeSelection = bMultiSelected && m_MultiSelected.size() > 1;
-
-                                ImGui::SetDragDropPayload("XRESOURCE_EDITOR_ASSET_FILE_DRAG", &Payload, sizeof(Payload));
-                                ImGui::TextUnformatted(Payload.m_bWholeSelection ? std::format("{} items", m_MultiSelected.size()).c_str() : Name.c_str());
-                                ImGui::EndDragDropSource();
-
-                                // OS-level drag-out (Phase 6) - see IsCursorOutsideMainWindow's own comment.
-                                if (IsCursorOutsideMainWindow())
-                                    RunOsFileDragOut(AssetsRoot, Payload);
-                            }
+                            // (A file row asked right after its Selectable, above: its badge is the last item here. A folder row has no badge.)
+                            if (E.m_bDirectory) RowDragSource();
 
                             // Drop target (5C) - only folder rows accept a drop (dropping onto a FILE
                             // row makes no sense - nothing here treats a file as a container).
@@ -2144,6 +2209,7 @@ namespace xresource_editor
         library::guid                         m_SelectedLibrary = {};
         std::filesystem::path                 m_SelectedFolder  = {};
         std::wstring                          m_SelectedFile    = {};
+        std::wstring                          m_ScrollToFile    = {};       // a file whose row RevealFile wants in view: the table scrolls to it when it draws it
 
         // Trash browsing view (Phase 6) - true means every root computed from m_SelectedLibrary's
         // library path is <Library>/.trash/assets rather than <Library>/Assets, and m_SelectedFolder is
