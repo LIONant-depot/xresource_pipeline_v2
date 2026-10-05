@@ -470,6 +470,37 @@ namespace xresource_editor
             return false;
         }
 
+        // The two submenus of the menu of a file that resources point at: "Find Resource" shows the resource in the resource browser (the drawer opens on the Resources tab, as the Find button of a
+        // resource reference does), "Open Resource" opens its editor. Each lists the resources by their full path in the browser, up to kMaxResourcesInMenu, then how many more there are.
+        static constexpr std::size_t kMaxResourcesInMenu = 10;
+        void RenderResourceMenus(const std::wstring& LibraryRelPath) noexcept
+        {
+            std::size_t Total = 0;
+            const auto  Resources = m_AssetMgr.GetDependents(m_SelectedLibrary, LibraryRelPath, kMaxResourcesInMenu, Total);
+            if (Resources.empty()) return;
+
+            ImGui::Separator();
+            auto& Host = xresource_editor::g_ReferenceHost;
+            const auto List = [&](const char* pMenu, bool bOpen)
+            {
+                if (!ImGui::BeginMenu(pMenu)) return;
+                for (std::size_t i = 0; i < Resources.size(); ++i)
+                {
+                    const auto& R       = Resources[i];
+                    const bool  bEnable = bOpen ? (Host.m_OpenEditor && Host.m_HasEditor && Host.m_HasEditor(R.m_Guid.m_Type)) : static_cast<bool>(Host.m_Locate);
+                    if (ImGui::MenuItem(std::format("{}###{}{}", R.m_Path, bOpen ? "open" : "find", i).c_str(), nullptr, false, bEnable))
+                    {
+                        if (bOpen) Host.m_OpenEditor(R.m_Guid);
+                        else       Host.m_Locate(R.m_Guid);
+                    }
+                }
+                if (Total > Resources.size()) ImGui::TextDisabled("...and %zu more", Total - Resources.size());
+                ImGui::EndMenu();
+            };
+            List("Find Resource", false);
+            List("Open Resource", true);
+        }
+
         // Recomputes ONE row's source-control badges - called only from RightPanel()'s own batch
         // refresh (revision-gated, see file_entry's own comment), never per-frame. Folders always
         // report None/None (no git status of their own worth showing).
@@ -2057,6 +2088,9 @@ namespace xresource_editor
                                         TryOpenFile(FullPath / E.m_Name, ToLibraryRelPath(m_SelectedFolder / E.m_Name), false);
                                     if (ImGui::MenuItem("Open With...", nullptr, false, bSingleFile))
                                         TryOpenFile(FullPath / E.m_Name, ToLibraryRelPath(m_SelectedFolder / E.m_Name), true);
+
+                                    // The resources that point at this file: find one in the resource browser, or open its editor. Only for a single file that has some.
+                                    if (bSingleFile && E.m_DependentCount > 0) RenderResourceMenus(ToLibraryRelPath(m_SelectedFolder / E.m_Name));
 
                                     // Manual Lock/Unlock (direct user request: "we should always give the
                                     // user the manual option to do it... just in case the user is doing

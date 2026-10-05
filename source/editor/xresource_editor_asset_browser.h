@@ -285,6 +285,19 @@ namespace xresource_editor
         inline constinit static external_drop_registration_base* g_pHead = nullptr;
     };
 
+    //---------------------------------------------------------------------------
+    // The resource reference of an inspector: ONE widget for every property that references a resource. What it needs from the application (the picture of a resource, opening its editor, finding it
+    // in the resource browser) comes through these hooks, which the application fills once; without them the widget is the name and the picker only.
+    //---------------------------------------------------------------------------
+    struct reference_host
+    {
+        std::function<plugin_icon_ref(xresource::full_guid)>    m_Thumbnail;        // the picture of the resource itself, when it has one that is ready (invalid: not yet)
+        std::function<bool(xresource::type_guid)>               m_HasEditor;        // the type of resource has an editor
+        std::function<void(xresource::full_guid)>               m_OpenEditor;       // open (or bring forward) the editor of the resource
+        std::function<bool(xresource::full_guid)>               m_Locate;           // find the resource in the resource browser (of the drawer): false when it cannot be shown there
+    };
+    inline reference_host g_ReferenceHost;
+
     // What a file (or folder) dragged out of the Assets tab carries ("XRESOURCE_EDITOR_ASSET_FILE_DRAG"): a small POD (ImGui copies it) naming the library and the path, relative to the
     // library's Assets folder, of the row the drag started on. Whoever takes the drop (the Assets tab itself, the asset reference of an inspector) reads it as this.
     struct asset_file_drag_payload

@@ -3353,9 +3353,23 @@ namespace xresource_editor
         // using that file... (bound the list just in case)"). TotalOut receives the FULL dependent count
         // even when the returned list itself was capped to MaxCount, so the caller can show "+N more"
         // rather than silently truncating.
+        struct file_dependent
+        {
+            xresource::full_guid    m_Guid;
+            std::string             m_Path;         // its full virtual path (see GetResourceVirtualPath)
+        };
+
         std::vector<std::string> GetDependentNames(const library::guid LibraryGUID, const std::wstring& RelPath, std::size_t MaxCount, std::size_t& TotalOut) const noexcept
         {
             std::vector<std::string> Result;
+            for (auto& D : GetDependents(LibraryGUID, RelPath, MaxCount, TotalOut)) Result.push_back(D.m_Path);
+            return Result;
+        }
+
+        // The same, with the guid of each resource (what the "Find Resource" and "Open Resource" items of the menu of a file act on).
+        std::vector<file_dependent> GetDependents(const library::guid LibraryGUID, const std::wstring& RelPath, std::size_t MaxCount, std::size_t& TotalOut) const noexcept
+        {
+            std::vector<file_dependent> Result;
             TotalOut = 0;
 
             // Flatten, not nested (real lock-order assert caught this live - see
@@ -3377,9 +3391,31 @@ namespace xresource_editor
             for (auto& Guid : ChildLinksCopy)
             {
                 if (Result.size() >= MaxCount) break;
-                Result.push_back(GetResourceVirtualPath(LibraryGUID, Guid));
+                Result.push_back({ Guid, GetResourceVirtualPath(LibraryGUID, Guid) });
             }
             return Result;
+        }
+
+        // The library that has a file a descriptor names ("Assets/Folder/file.png", relative to its library, or a full path), and the path of the file relative to that library (Assets\Folder\file.png).
+        bool ResolveAssetFile(const std::wstring& Path, library::guid& OutLibrary, std::wstring& OutLibraryRelPath) noexcept
+        {
+            if (Path.empty()) return false;
+            std::error_code Ec;
+            bool bFound = false;
+            for (auto& L : m_mLibraryDB)
+            {
+                const std::filesystem::path Root = L.second->m_Library.m_Path;
+                const std::filesystem::path Given(Path);
+                const auto Candidate = Given.is_absolute() ? Given : Root / Given;
+                if (!std::filesystem::exists(Candidate, Ec)) continue;
+                const auto Rel = Candidate.lexically_normal().lexically_relative(Root.lexically_normal());
+                if (Rel.empty() || *Rel.begin() == L"..") continue;
+                OutLibrary        = L.first;
+                OutLibraryRelPath = Rel.wstring();
+                bFound            = true;
+                break;
+            }
+            return bFound;
         }
 
         // Simplest of the four: a fresh copy has no dependents by construction (nothing could

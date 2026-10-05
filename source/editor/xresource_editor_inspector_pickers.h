@@ -37,63 +37,22 @@ namespace xresource_editor
         if (Out.empty()) Out = std::format("{:X}", FullGuid.m_Instance.m_Value);
     }
 
-    //---------------------------------------------------------------------------
-    // The resource reference of an inspector: ONE widget for every property that references a resource. What it needs from the application (the picture of a resource, opening its editor, finding it
-    // in the resource browser) comes through these hooks, which the application fills once; without them the widget is the name and the picker only.
-    //---------------------------------------------------------------------------
-    struct reference_host
-    {
-        std::function<plugin_icon_ref(xresource::full_guid)>    m_Thumbnail;        // the picture of the resource itself, when it has one that is ready (invalid: not yet)
-        std::function<bool(xresource::type_guid)>               m_HasEditor;        // the type of resource has an editor
-        std::function<void(xresource::full_guid)>               m_OpenEditor;       // open (or bring forward) the editor of the resource
-        std::function<bool(xresource::full_guid)>               m_Locate;           // find the resource in the resource browser (of the drawer): false when it cannot be shown there
-    };
-    inline reference_host g_ReferenceHost;
+    // (reference_host and g_ReferenceHost are in xresource_editor_asset_browser.h: the Assets tab uses them too)
 
-    // The whole path of a resource in the resource browser, as the hint of its reference shows it: the library (the folder of it), the folders the resource is in (the first folder link of each,
-    // up to the root), and its name: "example\Textures\Floor\bricks". Empty when no open library has it.
+    // The whole path of a resource in the resource browser, as the hint of its reference shows it: the library, the folders the resource is in, and its name, as the items "Find Resource" and "Open
+    // Resource" of the menu of an asset name it ("example > Texture Examples > bricks"). Empty when no open library has it.
     inline std::string ResourceFullPath(const xresource::full_guid& Guid) noexcept
     {
-        std::string Path;
         for (auto& Lib : xresource_editor::g_LibMgr.m_mLibraryDB)
         {
             bool bFound = false;
-            std::string Name;
-            xresource::instance_guid Folder{};
             Lib.second->m_InfoByTypeDataBase.FindAsReadOnly(Guid.m_Type, [&](const std::unique_ptr<library_db::info_db>& InfoDB)
             {
-                InfoDB->m_InfoDataBase.FindAsReadOnly(Guid.m_Instance, [&](const library_db::info_node& Node)
-                {
-                    bFound = true;
-                    Name   = Node.m_Info.m_Name;
-                    for (auto& Link : Node.m_Info.m_RscLinks)
-                        if (Link.m_Type == xresource_editor::folder::type_guid_v) { Folder = Link.m_Instance; break; }
-                });
+                InfoDB->m_InfoDataBase.FindAsReadOnly(Guid.m_Instance, [&](const library_db::info_node&) { bFound = true; });
             });
-            if (!bFound) continue;
-
-            Path = Name.empty() ? std::format("{:X}", Guid.m_Instance.m_Value) : Name;
-            Lib.second->m_InfoByTypeDataBase.FindAsReadOnly(xresource_editor::folder::type_guid_v, [&](const std::unique_ptr<library_db::info_db>& FolderDB)
-            {
-                for (int Depth = 0; Depth < 64 && Folder.m_Value != 0 && Folder.m_Value != xresource_editor::folder::trash_guid_v.m_Instance.m_Value; ++Depth)     // Depth: a cycle of links cannot hang the hint
-                {
-                    xresource::instance_guid Next{};
-                    bool bHas = false;
-                    FolderDB->m_InfoDataBase.FindAsReadOnly(Folder, [&](const library_db::info_node& Node)
-                    {
-                        bHas = true;
-                        Path = std::format("{}\\{}", Node.m_Info.m_Name.empty() ? "<unnamed>" : Node.m_Info.m_Name, Path);
-                        for (auto& Link : Node.m_Info.m_RscLinks)
-                            if (Link.m_Type == xresource_editor::folder::type_guid_v) { Next = Link.m_Instance; break; }
-                    });
-                    if (!bHas) break;
-                    Folder = Next;
-                }
-            });
-            Path = std::format("{}\\{}", std::filesystem::path(Lib.second->m_Library.m_Path).filename().string(), Path);
-            break;
+            if (bFound) return xresource_editor::g_LibMgr.GetResourceVirtualPath(Lib.first, Guid);
         }
-        return Path;
+        return {};
     }
 
     // Draws the picture of a resource: its own thumbnail when it has one, the picture of its type otherwise.
