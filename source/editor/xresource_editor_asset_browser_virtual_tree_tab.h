@@ -1748,7 +1748,9 @@ namespace xresource_editor
                                                 // control status cache's own key convention. Computed once and
                                                 // reused for both hooks; only computed when at least one hook
                                                 // is set - zero cost for every consumer that never wires either.
-                                                if (m_Browser.m_OnGetAssetStatusBadge || m_Browser.m_OnGetAssetLockBadge)
+                                                // A virtual resource (a font's atlas texture) is made by its parent's compiler:
+                                                // it has no file of its own in source control, so it shows no badge (Depth > 0).
+                                                if (Depth == 0 && (m_Browser.m_OnGetAssetStatusBadge || m_Browser.m_OnGetAssetLockBadge))
                                                 {
                                                     const auto SlashPos = Node.m_Path.find_last_of(L'\\');
                                                     std::wstring DescriptorPath = (SlashPos == std::wstring::npos)
@@ -1910,6 +1912,24 @@ namespace xresource_editor
                         return a.m_ResourceName > b.m_ResourceName;
                     });
                 break;
+            }
+
+            //
+            // The sort above knows nothing of the virtual children CollectItems spliced in behind their parent
+            // (a font's texture): it scatters them among the other items. Put each one back right after its parent
+            // (keeping the sorted order among siblings). Not when searching: those results are flat on purpose.
+            //
+            if (m_Browser.m_SearchString.empty())
+            {
+                std::vector<temp_node> Ordered;
+                Ordered.reserve(TempNodes.size());
+                std::function<void(const temp_node&)> Place = [&](const temp_node& Parent)
+                {
+                    Ordered.push_back(Parent);
+                    for (auto& C : TempNodes) if (C.m_VirtualDepth == Parent.m_VirtualDepth + 1 && C.m_VirtualGroupRoot == Parent.m_ResourceGUID) Place(C);
+                };
+                for (auto& E : TempNodes) if (E.m_VirtualDepth == 0) Place(E);
+                if (Ordered.size() == TempNodes.size()) TempNodes = std::move(Ordered);
             }
 
             //
