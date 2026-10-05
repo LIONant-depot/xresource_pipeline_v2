@@ -1,6 +1,8 @@
 #include "dependencies/xeditor/include/xeditor/popup.h"
 #include "xresource_editor_asset_browser.h"
 #include "dependencies/xeditor/include/xeditor/hint.h"
+#include "dependencies/xeditor/include/xeditor/save_all.h"
+#include "dependencies/xeditor/include/xeditor/grouped_list.h"
 #include "xresource_editor_asset_mgr.h"
 
 #include "imgui.h"
@@ -852,43 +854,53 @@ namespace xresource_editor
 
         //=============================================================================
 
+        // The contents of the "+" popup: the resource types by group, the one popup of the editors (xeditor::RenderGroupedList: the same as Add Component). The group of a type, and what it is, are what its
+        // plugin says (Plugin.config: Group, Description). Choosing one creates the resource in the current folder.
         void AddResourcePopUp()
         {
-            for (auto& E : m_AssetMgr.m_AssetPluginsDB.m_lPlugins)
-            {
-                // Show the resource type icon to the left of the resource name
-                xresource_editor::plugin_icon_ref IconRef = m_AssetMgr.m_AssetPluginsDB.getIconRef(E.m_TypeGUID, 0);
-                
-                ImGui::PushID(E.m_TypeName.c_str());
-                
-                // Draw icon
-                if (IconRef.isValid())
-                {
-                    float IconSize = ImGui::GetTextLineHeight();
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 4.0f);
-                    ImGui::ImageWithBg((ImTextureRef)(void*)IconRef.m_pTexture, ImVec2(IconSize, IconSize)
-                                , ImVec2(IconRef.m_U0, IconRef.m_V0), ImVec2(IconRef.m_U1, IconRef.m_V1)
-                                , ImVec4(0, 0, 0, 0), ImGui::ColorConvertU32ToFloat4(IM_COL32(255, 255, 255, 255)));
-                    ImGui::SameLine();
-                }
-                
-                // Draw text
-                if (ImGui::MenuItem(E.m_TypeName.c_str()))
-                {
-                    auto LibGUID            = m_SelectedLibrary.empty() ? m_AssetMgr.m_ProjectGUID : m_SelectedLibrary;
-                    // Default name so Create Folder / Add Resource don't ship an empty -Name through
-                    // the command layer (a default name is friendlier than an empty one - see m_OnCreateAsset).
-                    const std::string DefaultName = std::format("New {}", E.m_TypeName);
-                    auto LastGeneratedAsset = m_Browser.m_OnCreateAsset
-                        ? m_Browser.m_OnCreateAsset(LibGUID, E.m_TypeGUID, m_ParentGUID, DefaultName)
-                        : m_AssetMgr.NewAsset(LibGUID, { {}, E.m_TypeGUID }, m_ParentGUID, DefaultName);
+            const auto& Plugins = m_AssetMgr.m_AssetPluginsDB.m_lPlugins;
 
-                    m_SelectedItems.clear();
-                    m_SelectedItems.push_back(LastGeneratedAsset);
-                }
-                
-                ImGui::PopID();
+            std::vector<xeditor::grouped_list_item> Items;
+            Items.reserve(Plugins.size());
+            for (const auto& E : Plugins)
+            {
+                xeditor::grouped_list_item Item;
+                Item.m_Name  = E.m_TypeName;
+                Item.m_Group = E.m_Group;
+                Item.m_DrawIcon = [this, &E]()
+                {
+                    xresource_editor::plugin_icon_ref IconRef = m_AssetMgr.m_AssetPluginsDB.getIconRef(E.m_TypeGUID, 0);
+                    const float IconSize = ImGui::GetTextLineHeight();
+                    if (IconRef.isValid())
+                        ImGui::ImageWithBg((ImTextureRef)(void*)IconRef.m_pTexture, ImVec2(IconSize, IconSize)
+                                    , ImVec2(IconRef.m_U0, IconRef.m_V0), ImVec2(IconRef.m_U1, IconRef.m_V1)
+                                    , ImVec4(0, 0, 0, 0), ImGui::ColorConvertU32ToFloat4(IM_COL32(255, 255, 255, 255)));
+                    else
+                        ImGui::Dummy(ImVec2(IconSize, IconSize));
+                };
+                Item.m_OnHover = [&E]()
+                {
+                    const std::string Detail = std::format("Group: {}", E.m_Group);
+                    xeditor::hint::Draw({ .m_Topic = E.m_TypeName, .m_Body = E.m_Description, .m_Detail = Detail });
+                };
+                Items.push_back(std::move(Item));
             }
+
+            const int Chosen = xeditor::RenderGroupedList(m_AddResourceSearch, m_AddResourceGroupOpen, Items
+                , { .m_NoMatch = "No matching resources.", .m_NoItems = "No resources to add.", .m_LastGroup = "Other" });       // Other: the plugins that did not say a group
+            if (Chosen < 0) return;
+
+            const auto& E       = Plugins[Chosen];
+            auto LibGUID        = m_SelectedLibrary.empty() ? m_AssetMgr.m_ProjectGUID : m_SelectedLibrary;
+            // Default name so Create Folder / Add Resource don't ship an empty -Name through
+            // the command layer (a default name is friendlier than an empty one - see m_OnCreateAsset).
+            const std::string DefaultName = std::format("New {}", E.m_TypeName);
+            auto LastGeneratedAsset = m_Browser.m_OnCreateAsset
+                ? m_Browser.m_OnCreateAsset(LibGUID, E.m_TypeGUID, m_ParentGUID, DefaultName)
+                : m_AssetMgr.NewAsset(LibGUID, { {}, E.m_TypeGUID }, m_ParentGUID, DefaultName);
+
+            m_SelectedItems.clear();
+            m_SelectedItems.push_back(LastGeneratedAsset);
         }
 
         //=============================================================================
@@ -934,11 +946,11 @@ namespace xresource_editor
                 });
                 if (bIsDeleted) return;
 
-                if (asset_browser::ScaleButton("\xee\xa5\x88", 1.2f))
-                {
-                    ImGui::OpenPopup("Add Resource");
-                }
+                const bool bPlus = asset_browser::ScaleButton("\xee\xa5\x88", 1.2f);
+                const ImVec2 PlusPos(ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().y);       // under the button
+                if (bPlus) ImGui::OpenPopup("Add Resource");
 
+                if (ImGui::IsPopupOpen("Add Resource")) ImGui::SetNextWindowPos(PlusPos);        // aligned to the button, not to the mouse
                 if (ImGui::BeginPopup("Add Resource"))
                 {
                     AddResourcePopUp();
@@ -1539,6 +1551,52 @@ namespace xresource_editor
         }
 
         //=============================================================================
+
+        // The resource view's Save: every rename, move and new folder is kept in memory until it is saved, so, like the resource editors, the view has a menu (Save, Save All) and a Save button that
+        // is enabled while something is waiting. No Close: the view is not an editor that closes.
+        bool RenderLeftBar() noexcept override
+        {
+            if (m_Browser.isPopup()) return false;          // the picker of a reference has no Save
+            SaveControls();
+            return true;
+        }
+
+        void SaveControls()
+        {
+            const bool bDirty = m_AssetMgr.isReadyToSave();
+
+            ImGui::PushID("ResourcesMenu");
+            // One button like the menu of the other editors: the icon of what it belongs to (the Resources) and the down arrow.
+            const ImGuiStyle& Style = ImGui::GetStyle();
+            const float       Gap   = 4.0f;
+            const ImVec2      Size(Style.FramePadding.x * 2.0f + ImGui::CalcTextSize(xeditor::library_icon_v).x + Gap + ImGui::CalcTextSize(xeditor::menu_arrow_v).x, 0.0f);
+            const bool        bMenu = ImGui::Button("###Button", Size);
+            {
+                const ImVec2 Min = ImGui::GetItemRectMin();
+                auto*        pDraw = ImGui::GetWindowDrawList();
+                const ImU32  Col = ImGui::GetColorU32(ImGuiCol_Text);
+                pDraw->AddText(ImVec2(Min.x + Style.FramePadding.x, Min.y + Style.FramePadding.y), Col, xeditor::library_icon_v);
+                pDraw->AddText(ImVec2(Min.x + Style.FramePadding.x + ImGui::CalcTextSize(xeditor::library_icon_v).x + Gap, Min.y + Style.FramePadding.y), Col, xeditor::menu_arrow_v);
+            }
+            const ImVec2 MenuPos(ImGui::GetItemRectMin().x, ImGui::GetItemRectMax().y);       // under the button
+            if (bMenu) ImGui::OpenPopup("MenuPopup");
+            if (ImGui::IsItemHovered()) xeditor::hint::Text("The menu of the resources: Save, Save All");
+            if (ImGui::IsPopupOpen("MenuPopup")) ImGui::SetNextWindowPos(MenuPos);              // aligned to the button, not to the mouse
+            if (ImGui::BeginPopup("MenuPopup"))
+            {
+                if (ImGui::MenuItem((std::string(xeditor::save_icon_v) + "  Save").c_str(), nullptr, false, bDirty)) { xproperty::settings::context Context; m_AssetMgr.Save(Context); }
+                if (m_Browser.m_OnSaveAll && ImGui::MenuItem((std::string(xeditor::save_all_icon_v) + "  Save All").c_str(), "Ctrl+Shift+S")) m_Browser.m_OnSaveAll();
+                ImGui::EndPopup();
+            }
+            ImGui::PopID();
+
+            ImGui::SameLine(0, 4.0f);
+            if (!bDirty) ImGui::BeginDisabled();
+            if (ImGui::Button((std::string(" ") + xeditor::save_icon_v + " ").c_str())) { xproperty::settings::context Context; m_AssetMgr.Save(Context); }
+            if (!bDirty) ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                xeditor::hint::Text(bDirty ? "Save the renames and moves of the resources (they are only in memory until then)" : "Nothing to save: the renames and moves are saved");
+        }
 
         void TopControls()
         {
@@ -2984,6 +3042,8 @@ namespace xresource_editor
         // inline into the same grid instead - see the "Asset Browser: inline virtual-resource
         // expansion" plan for the full design).
         std::unordered_map<xresource::full_guid, bool>      m_IsExpanded            = {};
+        std::string                                         m_AddResourceSearch     = {};       // the search of the "+" popup
+        std::unordered_map<std::string, bool>               m_AddResourceGroupOpen  = {};       // which groups of the "+" popup are open (remembered, like the Add Component popup)
         xresource::full_guid                                m_DraggedDescriptorItem = {};
         xresource::type_guid                                m_SelectedType          = {};
         std::vector<path_history_entry>                     m_PathHistoryListRU     = {};

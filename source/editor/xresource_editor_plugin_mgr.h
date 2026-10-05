@@ -132,6 +132,8 @@ namespace xresource_editor
         struct pipeline_plugin
         {
             std::string                         m_TypeName;
+            std::string                         m_Group;            // where the resource is in the lists (the "+" of the resource view): every plugin must say (Graphics, Geometry, World, ...), as every component has a category
+            std::string                         m_Description;      // what the resource is, in a sentence: the hint of the "+" list
             std::wstring                        m_ResourceFileExtension;
             xresource::type_guid                m_TypeGUID;
             std::vector<xresource::type_guid>   m_RunAfter;
@@ -183,6 +185,14 @@ namespace xresource_editor
             ( "PipelinePlugin", pipeline_plugin
             , obj_member< "TypeName"
                 , &pipeline_plugin::m_TypeName
+                , member_flags<xproperty::flags::SHOW_READONLY
+                >>
+            , obj_member< "Group"
+                , &pipeline_plugin::m_Group
+                , member_flags<xproperty::flags::SHOW_READONLY
+                >>
+            , obj_member< "Description"
+                , &pipeline_plugin::m_Description
                 , member_flags<xproperty::flags::SHOW_READONLY
                 >>
             , obj_member< "FileExtension"
@@ -436,6 +446,13 @@ namespace xresource_editor
                 // Insert the plugin in the list
                 //
                 Plugin.m_PluginPath = std::move(entry.path().wstring());
+
+                // Every resource type has a group, like every component has a category: the list of the "+" is organized by it. A plugin without one is still loaded (in "Other") so nothing disappears, but it is an error.
+                if (Plugin.m_Group.empty())
+                {
+                    std::cerr << "Error: the plugin '" << Plugin.m_TypeName << "' has no Group in its Plugin.config (PipelinePlugin/Group): it is listed under Other" << std::endl;
+                    Plugin.m_Group = "Other";
+                }
 
                 m_mPluginsByTypeName[Plugin.m_TypeName] = static_cast<int>(m_lPlugins.size());
                 m_mPluginsByTypeGUID[Plugin.m_TypeGUID] = static_cast<int>(m_lPlugins.size());

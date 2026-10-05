@@ -291,6 +291,9 @@ namespace xresource_editor
         virtual void LeftPanel()    = 0;
         virtual void RightPanel()   = 0;
 
+        // Drawn at the far left of the bar above the tree (before the search), where the resource editors have their menu and Save. True when it drew something. Nothing by default.
+        virtual bool RenderLeftBar() noexcept { return false; }
+
         // Makes the tab show this resource: its folder is the current one (reached the way a click on the folder reaches it, so the history stays as it is: Back goes where it always went), the
         // search and the type filter that would hide it are cleared, and it is the selection, scrolled into view. False when the tab cannot (the resource is in the trash, or in no open library).
         virtual bool Reveal(xresource::full_guid Guid) noexcept { (void)Guid; return false; }
@@ -535,7 +538,7 @@ namespace xresource_editor
 
                     auto SearchBarTop = ImGui::GetCursorScreenPos();
                     ImGui::BeginGroup();
-                    RenderSearchBar(ImVec2(size1, total_height));
+                    RenderSearchBar(ImVec2(size1, total_height), pTab);
 
                     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.11f, 0.11f, 0.11f, 0.75f));
                     if (ImGui::BeginChild("Left", ImVec2(size1, total_height - (ImGui::GetCursorScreenPos().y - SearchBarTop.y))))
@@ -695,12 +698,12 @@ namespace xresource_editor
 
         //=============================================================================
 
-        void RenderSearchBar(ImVec2 Size)
+        void RenderSearchBar(ImVec2 Size, asset_browser_tab_base* pTab = nullptr)
         {
             const auto x = ImGui::GetCursorPosX();
 
-            if (ImGui::Button("\xe2\x96\xbc")) m_SearchString.clear();
-            ImGui::SameLine(0, 0.1f);
+            // The tab's own controls (the resource view's menu and Save) have the first line; the search bar is on the line below them.
+            if (pTab) (void)pTab->RenderLeftBar();
 
             // The box itself (magnifying glass, gray X, rounded input) is the editors' one shared search bar.
             xeditor::RenderTreeSearchBar(m_SearchString, Size.x - (ImGui::GetCursorPosX() - x));
@@ -904,7 +907,7 @@ namespace xresource_editor
                             // where it visually sat before rather than special-casing one tab by name.
                             auto SearchBarTop = ImGui::GetCursorScreenPos();
                             ImGui::BeginGroup();
-                            RenderSearchBar(ImVec2(size1, total_height));
+                            RenderSearchBar(ImVec2(size1, total_height), pTab.get());
 
                             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.11f, 0.11f, 0.11f, 0.75f)); // was 0.145/0.80 - direct user request, "a bit darker"
                             if (ImGui::BeginChild("Left", ImVec2(size1, total_height - (ImGui::GetCursorScreenPos().y - SearchBarTop.y))))
@@ -1178,6 +1181,10 @@ namespace xresource_editor
         // true (direct user design decision). See asset_status_badge/asset_lock_badge above.
         std::function<int(library::guid, const std::wstring& /*RelativePath*/)> m_OnGetAssetStatusBadge;
         std::function<int(library::guid, const std::wstring& /*RelativePath*/)> m_OnGetAssetLockBadge;
+
+        // Optional: the Save All of the browser's menu (the application's, since it knows everything that has unsaved work). Without it the item is not there. The browser's own Save writes
+        // the renames and moves it keeps in memory (library_mgr::Save).
+        std::function<void()> m_OnSaveAll;
 
         // Optional - a monotonic counter that increments once each time the backing source-control
         // data actually changed (a completed background scan), so files_tab can batch-refresh its

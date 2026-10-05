@@ -28,6 +28,25 @@
 #include "dependencies/xundo/source/xundo_system.h"
 #include "dependencies/xeditor/include/xeditor/commands.h"
 #include "dependencies/xeditor/include/xeditor/serialize.h"
+#include "dependencies/xeditor/include/xeditor/save_all.h"
+
+namespace xresource_editor
+{
+    // Writes the renames, moves and other changes of the resources that are only in memory (every change of the resource view is kept in memory until it is saved). Says whether there was anything.
+    inline bool SaveAssets() noexcept
+    {
+        if (!g_LibMgr.isReadyToSave()) return false;
+        xproperty::settings::context Context;
+        g_LibMgr.Save(Context);
+        return true;
+    }
+
+    // What the asset database does when Save All fires.
+    inline void SaveAssetsOnSaveAll(xeditor::save_report& Report) noexcept
+    {
+        if (SaveAssets()) Report.Saved("Resource database");
+    }
+}
 
 namespace xresource_editor::commands
 {
@@ -542,9 +561,7 @@ namespace xresource_editor::commands
 
         std::string Query() noexcept override
         {
-            xproperty::settings::context Context;
-            xresource_editor::g_LibMgr.Save(Context);
-            return "Saved";
+            return xresource_editor::SaveAssets() ? "Saved" : "Nothing to save";
         }
     };
 }
