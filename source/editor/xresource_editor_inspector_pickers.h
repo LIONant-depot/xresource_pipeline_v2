@@ -6,6 +6,7 @@
 // and opens the asset browser as a popup to choose another. Used by every editor with resource-reference properties.
 #include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_asset_browser.h"
 #include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
+#include "dependencies/xeditor/include/xeditor/hint.h"
 
 #include <cwchar>
 #include <cwctype>
@@ -67,15 +68,30 @@ namespace xresource_editor
             ImGui::Dummy(ImVec2(Size, Size));
     }
 
+    // What a resource reference widget does besides showing the resource.
+    //  m_bReadOnly  shown, never changed: the same two lines as any resource reference, with no picker (the name is not a button) and no clear button; find in the resource browser stays (it changes nothing about the reference)
+    //  m_EditMenu   when set, the edit button opens a popup under it (not under the mouse) holding what this draws (ImGui::MenuItem...), in place of "open the resource in its own editor"
+    //  m_pEditTip   the hint of the edit button, when m_EditMenu is set
+    struct resource_reference_options
+    {
+        bool                    m_bReadOnly = false;
+        std::function<void()>   m_EditMenu;
+        const char*             m_pEditTip = nullptr;
+        ImVec2                  m_EditMenuSize = ImVec2(180.0f, 70.0f);   // the size the edit menu will have: where it goes so that it is seen whole (xeditor::popup::PlaceUnder)
+        ImVec2                  m_ItemSpacing = ImVec2(-1.0f, -1.0f);   // the spacing between the row's widgets, when the caller's is not the style's (the Inspector draws its rows with its own, tight one); negative: the style's
+        std::function<void(float)> m_Lead;                  // read only: drawn on the second line before the locate and edit buttons, with the width left of them (a negative width as ImGui takes it); the caller's own button, with its popups
+    };
+
     // A resource reference: the picture, the name (a press opens the picker), and the actions of the reference: open the resource in its editor, find it in the resource browser, clear the
     // reference. Big: the picture beside two lines, the name with the clear button at its right, and the two buttons under it. Small (the property's SMALL_RESOURCE flag, for lists where a row
-    // has no room): one line, the actions in the menu of a button at the right of the name.
-    inline void RenderResourceReference(xproperty::inspector& Inspector, bool& bOpen, const xresource::full_guid& PreFullGuid) noexcept
+    // has no room): one line, the actions in the menu of a button at the right of the name. Drawn from anywhere (an inspector's property, or a panel's own row: the prefab of an instance in the
+    // Entity Properties): pId makes it unique among its siblings, bOpen is set when the name was pressed and bClear when the reference was cleared. See resource_reference_options.
+    inline void RenderResourceReferenceRow(const void* pId, const xresource::full_guid& PreFullGuid, bool bSmall, const resource_reference_options& Options, bool& bOpen, bool& bClear) noexcept
     {
         constexpr const char* OpenIcon = "\xEE\x9C\x8F", * LocateIcon = "\xEE\xA0\xB8", * ClearIcon = "\xEE\x9C\x91", * MenuIcon = "\xEE\x9C\x92";    // Segoe MDL2: Edit, FolderOpen, Cancel, More
 
-        const bool bSmall = Inspector.m_CurrentProperty.m_Flags.m_bSmallResource;
-        const bool bNone  = PreFullGuid.empty();
+        const bool bReadOnly = Options.m_bReadOnly;
+        const bool bNone     = PreFullGuid.empty();
         std::string Name;
         RemapGUIDToString(Name, PreFullGuid);
         const auto  Full  = bNone ? PreFullGuid : xresource::g_Mgr.getFullGuid(PreFullGuid);
@@ -87,17 +103,28 @@ namespace xresource_editor
         const auto Open       = [&] { g_ReferenceHost.m_OpenEditor(Full); };
         const auto Locate     = [&] { g_ReferenceHost.m_Locate(Full); };
 
+        const bool  bSpacing = Options.m_ItemSpacing.x >= 0.0f;
+        const ImVec2 NormalSpacing = ImGui::GetStyle().ItemSpacing;        // what a popup of this row is drawn with
+        if (bSpacing) ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, Options.m_ItemSpacing);
         const auto& Style = ImGui::GetStyle();
         const float Line  = ImGui::GetFrameHeight();
-        ImGui::PushID(reinterpret_cast<const void*>(std::hash<std::string_view>{}(Inspector.m_CurrentProperty.m_Path)));
+        ImGui::PushID(pId);
 
-        // The name button: red when the reference names a resource that no open library has.
+        // The name button: red when the reference names a resource that no open library has. Read only: the same look, with no hover or press feedback (nothing happens when it is pressed).
         const auto NameButton = [&](float Width, float Height)
         {
             const bool bBroken = !bNone && !bKnown;
             if (bBroken) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.45f, 0.42f, 1.0f));
-            bOpen = ImGui::Button((Name + "###name").c_str(), ImVec2(Width, Height));
-            if (bBroken) ImGui::PopStyleColor();
+            else if (bReadOnly) ImGui::PushStyleColor(ImGuiCol_Text, xeditor::ReadOnlyTextColor());       // the colour the Inspector gives the value of a read only property
+            if (bReadOnly)
+            {
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_Button));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImGui::GetStyleColorVec4(ImGuiCol_Button));
+            }
+            const bool bPressed = ImGui::Button((Name + "###name").c_str(), ImVec2(Width, Height));
+            if (bReadOnly) ImGui::PopStyleColor(2);
+            if (!bReadOnly) bOpen = bPressed;
+            if (bBroken || bReadOnly) ImGui::PopStyleColor();
             if (ImGui::IsItemHovered())
             {
                 if (bBroken)      ImGui::SetTooltip("No open library has this resource");
@@ -106,7 +133,32 @@ namespace xresource_editor
         };
         const auto Tip = [](const char* pText) { if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", pText); };
 
-        if (bSmall)
+        // The edit button: opens the resource in its editor, or - when the caller gave a menu - a popup under the button with the caller's items.
+        const auto EditButton = [&](const ImVec2& Size)
+        {
+            ImGui::BeginDisabled(Options.m_EditMenu ? false : !bCanOpen);
+            if (ImGui::Button(OpenIcon, Size))
+            {
+                if (Options.m_EditMenu) ImGui::OpenPopup("##editmenu");
+                else                    Open();
+            }
+            const ImVec2 AnchorMin = ImGui::GetItemRectMin(), AnchorMax = ImGui::GetItemRectMax();
+            ImGui::EndDisabled();
+            Tip(Options.m_EditMenu ? (Options.m_pEditTip ? Options.m_pEditTip : "Edit") : bCanOpen ? "Open the resource in its editor" : "This resource has no editor");
+            if (Options.m_EditMenu)
+            {
+                if (ImGui::IsPopupOpen("##editmenu")) xeditor::popup::PlaceUnder(AnchorMin, AnchorMax, Options.m_EditMenuSize);        // under the button, not under the mouse; kept inside the window
+                if (bSpacing) ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, NormalSpacing);
+                if (ImGui::BeginPopup("##editmenu"))
+                {
+                    Options.m_EditMenu();
+                    ImGui::EndPopup();
+                }
+                if (bSpacing) ImGui::PopStyleVar();
+            }
+        };
+
+        if (bSmall && !bReadOnly)
         {
             RenderReferencePicture(Full, Line);
             ImGui::SameLine();
@@ -119,7 +171,7 @@ namespace xresource_editor
                 if (ImGui::MenuItem("Open in its editor", nullptr, false, bCanOpen)) Open();
                 if (ImGui::MenuItem("Find in the resource browser", nullptr, false, bCanLocate)) Locate();
                 ImGui::Separator();
-                if (ImGui::MenuItem("Clear", nullptr, false, !bNone)) Inspector.m_CurrentProperty.m_bClearResource = true;
+                if (ImGui::MenuItem("Clear", nullptr, false, !bNone)) bClear = true;
                 ImGui::EndPopup();
             }
         }
@@ -130,26 +182,51 @@ namespace xresource_editor
             RenderReferencePicture(Full, Picture);
             ImGui::SameLine();
             ImGui::BeginGroup();
-            NameButton(-(Line + Style.ItemSpacing.x), Line);
-            ImGui::SameLine();
-            ImGui::BeginDisabled(bNone);
-            if (ImGui::Button(ClearIcon, ImVec2(Line, Line))) Inspector.m_CurrentProperty.m_bClearResource = true;
-            ImGui::EndDisabled();
-            Tip("Clear the reference");
+            // Read only: the name has the whole width and there is no clear button (the rest of the form, the two lines, is the same)
+            NameButton(bReadOnly ? -FLT_MIN : -(Line + Style.ItemSpacing.x), Line);
+            if (!bReadOnly)
+            {
+                ImGui::SameLine();
+                ImGui::BeginDisabled(bNone);
+                if (ImGui::Button(ClearIcon, ImVec2(Line, Line))) bClear = true;
+                ImGui::EndDisabled();
+                Tip("Clear the reference");
+            }
 
-            ImGui::BeginDisabled(!bCanOpen);
-            if (ImGui::Button(OpenIcon, ImVec2(Line * 1.5f, Line))) Open();
-            ImGui::EndDisabled();
-            Tip(bCanOpen ? "Open the resource in its editor" : "This resource has no editor");
-            ImGui::SameLine();
-            ImGui::BeginDisabled(!bCanLocate);
-            if (ImGui::Button(LocateIcon, ImVec2(Line * 1.5f, Line))) Locate();
-            ImGui::EndDisabled();
-            Tip("Find the resource in the resource browser");
+            if (bReadOnly && Options.m_Lead)
+            {
+                // The caller's button takes the width, then locate, then edit flush with the right border
+                Options.m_Lead(-(2.0f * (Line * 1.5f + Style.ItemSpacing.x)));
+                ImGui::SameLine();
+                ImGui::BeginDisabled(!bCanLocate);
+                if (ImGui::Button(LocateIcon, ImVec2(Line * 1.5f, Line))) Locate();
+                ImGui::EndDisabled();
+                Tip("Find the resource in the resource browser");
+                ImGui::SameLine();
+                EditButton(ImVec2(Line * 1.5f, Line));
+            }
+            else
+            {
+                EditButton(ImVec2(Line * 1.5f, Line));
+                ImGui::SameLine();
+                ImGui::BeginDisabled(!bCanLocate);
+                if (ImGui::Button(LocateIcon, ImVec2(Line * 1.5f, Line))) Locate();
+                ImGui::EndDisabled();
+                Tip("Find the resource in the resource browser");
+            }
             ImGui::EndGroup();
             ImGui::EndGroup();
         }
         ImGui::PopID();
+        if (bSpacing) ImGui::PopStyleVar();
+    }
+
+    // The reference of a property of an inspector (m_OnResourceWigzmos).
+    inline void RenderResourceReference(xproperty::inspector& Inspector, bool& bOpen, const xresource::full_guid& PreFullGuid) noexcept
+    {
+        bool bClear = false;
+        RenderResourceReferenceRow(reinterpret_cast<const void*>(std::hash<std::string_view>{}(Inspector.m_CurrentProperty.m_Path)), PreFullGuid, Inspector.m_CurrentProperty.m_Flags.m_bSmallResource, {}, bOpen, bClear);
+        if (bClear) Inspector.m_CurrentProperty.m_bClearResource = true;
     }
 
     //---------------------------------------------------------------------------
