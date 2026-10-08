@@ -124,7 +124,7 @@ namespace xresource_pipeline
 #include "xresource_pipeline_compiler_base.h"
 
 // INLINES
-#include "details/xresource_pipeline_factory_inline.h"
+#include "Details/xresource_pipeline_factory_inline.h"
 
 void displayProgressBar(const char* pTitle, float progress) noexcept;
 
