@@ -4081,6 +4081,9 @@ namespace xresource_editor
                 {
                     std::filesystem::path p(std::move(CompilerPath));
                     CompilerPath = p.lexically_normal().wstring();
+
+                    // Linux: the native build of the compiler (see CompilerExecutablePath); Windows: unchanged
+                    CompilerPath = CompilerExecutablePath(CompilerPath);
                 }
 
                 // Generate the command line

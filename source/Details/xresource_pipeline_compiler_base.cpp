@@ -1,5 +1,5 @@
 
-#include "xresource_pipeline.h"
+#include "../xresource_pipeline.h"
 #include <cwctype>
 #include <stdio.h>
 #include <filesystem>

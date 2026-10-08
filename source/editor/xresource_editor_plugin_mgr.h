@@ -15,6 +15,8 @@
 #include <iostream>
 #include <filesystem>
 #include <memory>
+#include <cwctype>
+#include <cstdlib>
 #include "dependencies/xstrtool/source/xstrtool.h"
 #include "dependencies/xbitmap/source/xbitmap.h"   // asset_plugins_db::m_IconAtlasBitmap - CPU-only, headless-safe
 
@@ -56,6 +58,52 @@ namespace xresource_editor
         }
 
         CloseHandle(hFile);
+    }
+
+    //------------------------------------------------------------------------------------------------
+    // The program to run for a plugin's DebugCompiler/ReleaseCompiler (the project path already in front).
+    // Windows: the path as given. Linux: the plugin configs name the Windows build,
+    //     <plugin>\Build\<name>_compiler.vs2022\<Config>\<name>_compiler.exe
+    // and the native build of the same plugin CMakeLists.txt sits next to it (xLION root CMakeLists.txt, target
+    // xlion_compilers):
+    //     <plugin>/Build/<name>_compiler.linux/<Config>/<name>_compiler
+    // That one is returned - or the other configuration's, when only that one is built. Without a native build the
+    // Windows .exe (WSL interop) is returned only when XLION_INTEROP_COMPILERS=1; otherwise the native path, so the
+    // compile fails naming the program that is missing.
+    inline
+    std::wstring CompilerExecutablePath(const std::wstring& Path)
+    {
+    #if defined(_WIN32)
+        return Path;
+    #else
+        std::wstring P = Path;
+        for (auto& c : P) if (c == L'\\') c = L'/';
+        auto EndsWithNoCase = [](const std::wstring& S, std::wstring_view E)
+        {
+            if (S.size() < E.size()) return false;
+            for (std::size_t i = 0; i < E.size(); ++i) if (std::towlower(S[S.size() - E.size() + i]) != E[i]) return false;
+            return true;
+        };
+        if (!EndsWithNoCase(P, L".exe")) return Path;
+        P.resize(P.size() - 4);
+        const auto Vs = P.rfind(L".vs2022/");
+        if (Vs == std::wstring::npos) return Path;
+
+        const std::wstring Native = P.substr(0, Vs) + L".linux/" + P.substr(Vs + 8);
+        std::error_code    Ec;
+        if (std::filesystem::is_regular_file(Native, Ec)) return Native;
+
+        const auto CfgBegin = Vs + 7;   // after ".linux/"
+        const auto CfgEnd   = Native.find(L'/', CfgBegin);
+        if (CfgEnd != std::wstring::npos)
+        {
+            const std::wstring Cfg   = Native.substr(CfgBegin, CfgEnd - CfgBegin);
+            const std::wstring Other = Native.substr(0, CfgBegin) + (Cfg == L"Debug" ? L"Release" : L"Debug") + Native.substr(CfgEnd);
+            if (std::filesystem::is_regular_file(Other, Ec)) return Other;
+        }
+        if (const char* p = std::getenv("XLION_INTEROP_COMPILERS"); p && p[0] == '1') return Path;
+        return Native;
+    #endif
     }
 
     //------------------------------------------------------------------------------------------------
@@ -439,8 +487,8 @@ namespace xresource_editor
                 //
                 // get the timestamp of the compilers
                 //
-                if (Plugin.m_ReleaseCompiler.empty() == false ) GetFileTimestamp(std::format(L"{}\\{}", ProjectPath, Plugin.m_ReleaseCompiler), Plugin.m_ReleaseCompilerTimeStamp);
-                if (Plugin.m_DebugCompiler.empty() == false)    GetFileTimestamp(std::format(L"{}\\{}", ProjectPath, Plugin.m_DebugCompiler),   Plugin.m_DebugCompilerTimeStamp);
+                if (Plugin.m_ReleaseCompiler.empty() == false ) GetFileTimestamp(CompilerExecutablePath(std::format(L"{}\\{}", ProjectPath, Plugin.m_ReleaseCompiler)), Plugin.m_ReleaseCompilerTimeStamp);
+                if (Plugin.m_DebugCompiler.empty() == false)    GetFileTimestamp(CompilerExecutablePath(std::format(L"{}\\{}", ProjectPath, Plugin.m_DebugCompiler)),   Plugin.m_DebugCompilerTimeStamp);
 
                 //
                 // Insert the plugin in the list
