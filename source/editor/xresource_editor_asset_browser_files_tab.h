@@ -152,7 +152,7 @@ namespace xresource_editor
             if (bNeedsUninit) ::CoUninitialize();
             if (FAILED(Hr) && Hr != HRESULT_FROM_WIN32(ERROR_CANCELLED)) // user just closing the dialog isn't a failure worth logging
             {
-                std::printf("[AssetTree] SHOpenWithDialog failed for '%ls' (hr=0x%08lX)\n", FullPath.c_str(), static_cast<unsigned long>(Hr));
+                std::printf("[AssetTree] SHOpenWithDialog failed for '%s' (hr=0x%08lX)\n", reinterpret_cast<const char*>(FullPath.u8string().c_str()), static_cast<unsigned long>(Hr));
                 std::fflush(stdout);
             }
         }
@@ -164,7 +164,7 @@ namespace xresource_editor
             const auto Result = reinterpret_cast<INT_PTR>(::ShellExecuteW(nullptr, L"open", FullPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
             if (Result <= 32) // ShellExecuteW's own "succeeded" threshold - anything <= 32 is an error code
             {
-                std::printf("[AssetTree] Failed to open '%ls' (ShellExecuteW error %zd)\n", FullPath.c_str(), static_cast<std::ptrdiff_t>(Result));
+                std::printf("[AssetTree] Failed to open '%s' (ShellExecuteW error %zd)\n", reinterpret_cast<const char*>(FullPath.u8string().c_str()), static_cast<std::ptrdiff_t>(Result));
                 std::fflush(stdout);
             }
         }

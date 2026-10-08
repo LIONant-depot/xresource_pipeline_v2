@@ -3480,7 +3480,7 @@ namespace xresource_editor
             library Library;
             {
                 xtextfile::stream Stream;
-                if (auto Err = Stream.Open(true, std::format(L"{}\\Project.config\\Library.config.txt", LibraryPath), {xtextfile::file_type::TEXT}); Err)
+                if (auto Err = Stream.Open(true, std::format(L"{}\\Project.config\\Library.config.txt", LibraryPath), xtextfile::file_type::TEXT); Err)
                     return Err;
 
                 xproperty::settings::context Context;
@@ -3672,7 +3672,7 @@ namespace xresource_editor
         xerr SaveLibraryConfig(library& Lib) noexcept
         {
             xtextfile::stream Stream;
-            if (auto Err = Stream.Open(false, std::format(L"{}\\Project.config\\Library.config.txt", Lib.m_Path), {xtextfile::file_type::TEXT}); Err)
+            if (auto Err = Stream.Open(false, std::format(L"{}\\Project.config\\Library.config.txt", Lib.m_Path), xtextfile::file_type::TEXT); Err)
                 return Err;
 
             xproperty::settings::context Context;

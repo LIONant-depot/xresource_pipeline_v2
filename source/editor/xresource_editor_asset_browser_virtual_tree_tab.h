@@ -1273,7 +1273,7 @@ namespace xresource_editor
                         wcsncpy_s(Payload.m_Path, std::size(Payload.m_Path), L.second->m_Library.m_Path.c_str(), _TRUNCATE);
 
                         ImGui::SetDragDropPayload("LIBRARY_GUID", &Payload, sizeof(Payload), false);
-                        ImGui::Text(Str.substr(0, Str.find('#')).c_str());
+                        ImGui::TextUnformatted(Str.substr(0, Str.find('#')).c_str());
                         ImGui::EndDragDropSource();
                     }
                     else if (!Folder.m_isRoot && !Folder.m_isTrash && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
@@ -1281,7 +1281,7 @@ namespace xresource_editor
                         drag_and_drop_folder_payload_t Payload = { {ParentGUID}, FullGuid };
 
                         ImGui::SetDragDropPayload("DESCRIPTOR_GUID", &Payload, sizeof(Payload), false);
-                        ImGui::Text(Str.substr(0, Str.find('#')).c_str());
+                        ImGui::TextUnformatted(Str.substr(0, Str.find('#')).c_str());
                         ImGui::EndDragDropSource();
                         m_DraggedDescriptorItem = Payload.m_Source;
                     }

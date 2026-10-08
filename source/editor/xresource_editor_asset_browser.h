@@ -310,6 +310,8 @@ namespace xresource_editor
     // asset browser tab base
     struct asset_browser_tab_base
     {
+        virtual ~asset_browser_tab_base() = default;     // the tabs are owned (and deleted) through this base
+
         virtual void LeftPanel()    = 0;
         virtual void RightPanel()   = 0;
 

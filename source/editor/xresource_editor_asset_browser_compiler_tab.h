@@ -300,7 +300,7 @@ namespace xresource_editor
             }
             else
             {
-                ImGui::Text(std::format("Waiting to Compile with priority {}", E.m_Entry.m_Priority).c_str());
+                ImGui::TextUnformatted(std::format("Waiting to Compile with priority {}", E.m_Entry.m_Priority).c_str());
             }
             
 
