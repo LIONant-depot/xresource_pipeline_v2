@@ -1832,7 +1832,7 @@ namespace xresource_editor
                         };
 
                         auto Data = std::make_unique<data>();
-                        Data->m_DescriptorPath      = entry.path();
+                        Data->m_DescriptorPath      = entry.path().wstring();
                         Data->m_ResourcePath        = ResourcePath;
                         Data->m_ProjectPathLength   = ProjectPathLength;
                         Data->m_LibraryPath         = LibraryPath;
@@ -2981,7 +2981,7 @@ namespace xresource_editor
         // operation's own best-effort, not-all-or-nothing design.
         static bool PatchDescriptorAssetReference(const std::wstring& DescriptorPath, const std::wstring& OldRelPath, const std::wstring& NewRelPath) noexcept
         {
-            std::ifstream In(DescriptorPath, std::ios::binary);
+            std::ifstream In(std::filesystem::path(DescriptorPath), std::ios::binary);
             if (!In) return false;
             std::string Content((std::istreambuf_iterator<char>(In)), std::istreambuf_iterator<char>());
             In.close();
@@ -3060,7 +3060,7 @@ namespace xresource_editor
             const std::string NewValueNarrow = NarrowOf(NewValueWide);
             Content.replace(ValueStart, ValueLen, NewValueNarrow);
 
-            std::ofstream Out(DescriptorPath, std::ios::binary | std::ios::trunc);
+            std::ofstream Out(std::filesystem::path(DescriptorPath), std::ios::binary | std::ios::trunc);
             if (!Out) return false;
             Out.write(Content.data(), static_cast<std::streamsize>(Content.size()));
             return true;
@@ -4065,7 +4065,7 @@ namespace xresource_editor
                 if (CompilerPath.empty() == false)
                 {
                     std::filesystem::path p(std::move(CompilerPath));
-                    CompilerPath = p.lexically_normal();
+                    CompilerPath = p.lexically_normal().wstring();
                 }
 
                 // Generate the command line

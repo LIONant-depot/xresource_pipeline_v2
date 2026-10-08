@@ -11,7 +11,9 @@
 #include <cstdio>
 #include <format>
 #include "imgui_internal.h"     // For BeginDragDropTargetCustom (background drop target, 5C)
+#if defined(_WIN32)
 #include "xresource_editor_asset_ole_drag.h"   // Real Win32 OLE drag-out to Explorer (Phase 6)
+#endif
 #include <shellapi.h>           // ShellExecuteW - double-click-to-open (Phase 6 polish)
 #include <shlobj.h>             // SHOpenWithDialog - "Open With..." (Phase 4B follow-up)
 
@@ -1015,8 +1017,12 @@ namespace xresource_editor
             for (auto& RelPath : ResolveDragSources(Payload))
                 AbsolutePaths.push_back((AssetsRoot / RelPath).wstring());
 
+        #if defined(_WIN32)
             const HWND hWnd = reinterpret_cast<HWND>(m_Browser.m_OnGetMainWindowHandle());
             xresource_editor::ole_drag::RunFileDragOut(hWnd, std::move(AbsolutePaths));
+        #else
+            (void)AbsolutePaths;    // Linux port: no OS drag-out
+        #endif
         }
 
         // DestLibrary/DestFolderRelToAssets describe the drop TARGET (a tree/table folder row, or the

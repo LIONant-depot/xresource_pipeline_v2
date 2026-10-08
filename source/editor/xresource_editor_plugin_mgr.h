@@ -425,7 +425,7 @@ namespace xresource_editor
             {
                 if (std::filesystem::is_directory(entry) == false) continue;
 
-                std::wstring ConfigFile = std::format(L"{}\\plugin.config\\resource_pipeline.config.txt", entry.path().c_str() );
+                std::wstring ConfigFile = std::format(L"{}\\plugin.config\\resource_pipeline.config.txt", entry.path().wstring() );
                 if (std::filesystem::exists(ConfigFile) == false) continue;
 
                 // Read the plugin

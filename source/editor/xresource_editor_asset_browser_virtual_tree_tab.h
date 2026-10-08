@@ -686,7 +686,7 @@ namespace xresource_editor
             else if( m_PathHistoryList[m_PathHistoryIndex].m_gLibrary != gLibrary || m_PathHistoryList[m_PathHistoryIndex].m_gFolder != gFolder)
             {
                 // Prune the history if we are not at the end
-                m_PathHistoryList.resize(std::min( m_PathHistoryIndex+1ull, m_PathHistoryList.size()) );
+                m_PathHistoryList.resize(std::min<std::uint64_t>( m_PathHistoryIndex+1ull, m_PathHistoryList.size()) );
 
                 // Add the new entry to the history
                 m_PathHistoryList.push_back({ gLibrary, gFolder });

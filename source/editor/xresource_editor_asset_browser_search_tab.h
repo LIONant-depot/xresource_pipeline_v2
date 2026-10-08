@@ -17,7 +17,7 @@ namespace xresource_editor
             if (window->SkipItems)
                 return false;
 
-            ImGuiID id = window->GetID(NULL);
+            ImGuiID id = window->GetID(0);   // NULL is 0 (int overload) on MSVC; __null is ambiguous on GCC/clang
 
             // Calculate button rectangle
             ImVec2 pos = window->DC.CursorPos;
