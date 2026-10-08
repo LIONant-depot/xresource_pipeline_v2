@@ -40,6 +40,21 @@
 
 namespace xresource_editor
 {
+    // The time of a file that is not there (or of an input that must count as older than everything): earlier than any real file.
+    // Not file_time_type{}: that is the epoch of the file clock, 1601 for MSVC's but 2174 for libstdc++'s, where it would be NEWER than
+    // every file - a resource that was never compiled would look up to date and nothing would ever compile (Linux port).
+    inline std::filesystem::file_time_type NoFileTime() noexcept
+    {
+#if defined(_WIN32)
+        return {};
+#else
+        return std::chrono::file_clock::from_sys(std::chrono::sys_seconds{});      // 1970
+#endif
+    }
+}
+
+namespace xresource_editor
+{
     namespace details
     {
 
@@ -953,12 +968,12 @@ namespace xresource_editor
             std::vector<xresource::full_guid>   m_lChildLinks       = {};           // Quick way to determine how many other resources have us as a dependency
             xresource_pipeline::dependencies    m_Dependencies      = {};           // List of the dependencies for the resource
             int                                 m_InfoChangeCount   = 0;            // This helped us know when an info has changed...
-            std::filesystem::file_time_type     m_InfoReadTime      = {};           // When was the info read last 
-            std::filesystem::file_time_type     m_InfoTime          = {};           // When was last time the info got modified
-            std::filesystem::file_time_type     m_DescriptorTime    = {};           // When was last time the descriptor got modified
-            std::filesystem::file_time_type     m_ResourceTime      = {};           // When was last time the descriptor got modified
-            std::filesystem::file_time_type     m_NewestDependencyTime = {};        // From all its dependencies which is the newest of them all...
-            std::filesystem::file_time_type     m_CompileStarted    = {};           // When the last compile of it began (see RetryFailedIfInputsChanged)
+            std::filesystem::file_time_type     m_InfoReadTime      = NoFileTime();           // When was the info read last 
+            std::filesystem::file_time_type     m_InfoTime          = NoFileTime();           // When was last time the info got modified
+            std::filesystem::file_time_type     m_DescriptorTime    = NoFileTime();           // When was last time the descriptor got modified
+            std::filesystem::file_time_type     m_ResourceTime      = NoFileTime();           // When was last time the descriptor got modified
+            std::filesystem::file_time_type     m_NewestDependencyTime = NoFileTime();        // From all its dependencies which is the newest of them all...
+            std::filesystem::file_time_type     m_CompileStarted    = NoFileTime();           // When the last compile of it began (see RetryFailedIfInputsChanged)
             bool                                m_bHasDescriptor    = {};           // tells the system if it has a descriptor.txt
             bool                                m_bHasResource      = {};           // tells if the resource has been compiled or not
             bool                                m_bHasDependencies  = {};           // Tells if it has a dependency file
@@ -973,12 +988,12 @@ namespace xresource_editor
                 m_bHasDescriptor    = false;
                 m_bHasResource      = false;
                 m_bHasDependencies  = false;
-                m_InfoReadTime      = {};
-                m_InfoTime          = {};
-                m_DescriptorTime    = {};
-                m_ResourceTime      = {};
-                m_NewestDependencyTime = {};
-                m_CompileStarted    = {};
+                m_InfoReadTime      = NoFileTime();
+                m_InfoTime          = NoFileTime();
+                m_DescriptorTime    = NoFileTime();
+                m_ResourceTime      = NoFileTime();
+                m_NewestDependencyTime = NoFileTime();
+                m_CompileStarted    = NoFileTime();
             }
         };
 
@@ -1650,10 +1665,10 @@ namespace xresource_editor
         {
             // Load the file
             xresource_pipeline::info        Info                = {};
-            std::filesystem::file_time_type InfoTime            = {};
-            std::filesystem::file_time_type DescriptorTime      = {};
-            std::filesystem::file_time_type ResourceTime        = {};
-            std::filesystem::file_time_type NewestDependencyTime = {};
+            std::filesystem::file_time_type InfoTime            = NoFileTime();
+            std::filesystem::file_time_type DescriptorTime      = NoFileTime();
+            std::filesystem::file_time_type ResourceTime        = NoFileTime();
+            std::filesystem::file_time_type NewestDependencyTime = NoFileTime();
             std::error_code                 Ec                  = {};
             const bool                      bInfoFileExists     = std::filesystem::exists(Path, Ec) ? !Ec : false;
             const std::wstring              DescriptorPath      = std::wstring{ Path.substr(0, Path.find_last_of(L'\\') + 1) } + L"Descriptor.txt";
@@ -2766,8 +2781,8 @@ namespace xresource_editor
                     InfoDB->m_InfoDataBase.FindAsWrite(ResourceGUID.m_Instance, [&](library_db::info_node& InfoNode)
                     {
                         // Let us clear the descriptor time to force the issue...
-                        InfoNode.m_DescriptorTime = {};
-                        InfoNode.m_ResourceTime   = {};
+                        InfoNode.m_DescriptorTime = NoFileTime();
+                        InfoNode.m_ResourceTime   = NoFileTime();
                         Library->AddToCompilationQueueIfNeeded(*InfoDB, InfoNode);
                     });
                 });
@@ -2790,8 +2805,8 @@ namespace xresource_editor
                     {
                         for (auto& I : Entry->m_InfoDataBase)
                         {
-                            I.second.m_DescriptorTime = {};
-                            I.second.m_ResourceTime   = {};
+                            I.second.m_DescriptorTime = NoFileTime();
+                            I.second.m_ResourceTime   = NoFileTime();
                             L.second->AddToCompilationQueueIfNeeded(*Entry, I.second);
                         }
                     });
@@ -3157,8 +3172,8 @@ namespace xresource_editor
                             // Immediate, not deferred to a later Save() - the real file already moved,
                             // same "real disk operation happens now" precedent NewAsset's own info.txt
                             // write already follows.
-                            InfoNode.m_DescriptorTime = {};
-                            InfoNode.m_ResourceTime   = {};
+                            InfoNode.m_DescriptorTime = NoFileTime();
+                            InfoNode.m_ResourceTime   = NoFileTime();
                             Library->AddToCompilationQueueIfNeeded(*InfoDB, InfoNode);
                         });
                         if (!bFoundInst) Result.m_FailedDependents.push_back({ Dep, "Dependent resource instance no longer exists (stale index)" });
@@ -4208,9 +4223,9 @@ namespace xresource_editor
                                 Node.m_bHasDescriptor       = std::filesystem::exists(DescriptorPath, Ec) ? !Ec : false;
                                 Node.m_bHasResource         = std::filesystem::exists(ResourcePath, Ec) ? !Ec : false;
                                 Node.m_bHasDependencies     = Node.m_bHasResource && std::filesystem::exists(DependencyPath, Ec) ? !Ec : false;
-                                Node.m_DescriptorTime       = Node.m_bHasDescriptor ? std::filesystem::last_write_time(DescriptorPath) : std::filesystem::file_time_type{};
-                                Node.m_InfoTime             = bInfoFileExists ? std::filesystem::last_write_time(Node.m_Path) : std::filesystem::file_time_type{};
-                                Node.m_ResourceTime         = Node.m_bHasResource ? std::filesystem::last_write_time(ResourcePath) : std::filesystem::file_time_type{};
+                                Node.m_DescriptorTime       = Node.m_bHasDescriptor ? std::filesystem::last_write_time(DescriptorPath) : NoFileTime();
+                                Node.m_InfoTime             = bInfoFileExists ? std::filesystem::last_write_time(Node.m_Path) : NoFileTime();
+                                Node.m_ResourceTime         = Node.m_bHasResource ? std::filesystem::last_write_time(ResourcePath) : NoFileTime();
 
                                 //TODO: Update the dependencies of the info just in case they have changed....
                                 if (Node.m_bHasDependencies)
