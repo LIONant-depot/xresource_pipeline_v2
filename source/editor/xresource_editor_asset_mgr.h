@@ -793,8 +793,19 @@ namespace xresource_editor
             if (!CreatePipe(&hChildStd_OUT_Rd, &hChildStd_OUT_Wr, &saAttr, 0))
                 throw std::runtime_error("Stdout pipe creation failed");
 
+            // Close both pipe ends before throwing, otherwise each failed launch leaks them
+            // (a missing compiler executable is retried, which used to exhaust the fd/handle table)
+            auto ClosePipe = [&]
+            {
+                CloseHandle(hChildStd_OUT_Wr);
+                CloseHandle(hChildStd_OUT_Rd);
+            };
+
             if (!SetHandleInformation(hChildStd_OUT_Rd, HANDLE_FLAG_INHERIT, 0))
+            {
+                ClosePipe();
                 throw std::runtime_error("Stdout SetHandleInformation failed");
+            }
 
             STARTUPINFO siStartInfo;
             ZeroMemory(&siStartInfo, sizeof(STARTUPINFO));
@@ -818,7 +829,10 @@ namespace xresource_editor
                 NULL,           // Use parent's starting directory
                 &siStartInfo,   // Pointer to STARTUPINFO structure
                 &piProcInfo))   // Pointer to PROCESS_INFORMATION structure
+            {
+                ClosePipe();
                 throw std::runtime_error("CreateProcess failed");
+            }
 
             DWORD                   dwRead;
             std::array<CHAR, 16>    chBuf;
