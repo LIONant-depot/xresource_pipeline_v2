@@ -1049,6 +1049,10 @@ namespace xresource_editor
         // at this point in the header).
         inline bool HasNoCompiler(xresource::type_guid Type) const;
 
+        // When the compiler of this resource type was built (its executable's last write time): the one CompilingThreadWorker would run - the configuration the
+        // user asked for, or the other one when only that is configured. NoFileTime() when the type has no compiler or the executable is not there.
+        std::filesystem::file_time_type CompilerTime(xresource::type_guid Type) const;
+
         // bForce: queue it even when its timestamps say it is up to date (RecompileAllResources) - the rest of the rules (no compiler, already queued) still apply.
         bool AddToCompilationQueueIfNeeded( const info_db& InfoTypeDB, info_node& InfoNode, bool bForce = false) const
         {
@@ -1088,6 +1092,11 @@ namespace xresource_editor
             if (bForce || InfoNode.m_NewestDependencyTime > InfoNode.m_ResourceTime || InfoNode.m_DescriptorTime > InfoNode.m_ResourceTime)
                 return QueueForCompilation(InfoNode);
 
+            // The compiler is one of the things a resource is made from: a resource compiled by an older build of its compiler is stale. It must also be newer than
+            // the last attempt (m_CompileStarted): a compile that failed leaves the resource time where it was, and without that test it would be tried again forever.
+            if (const auto CompilerT = CompilerTime(InfoNode.m_Info.m_Guid.m_Type); CompilerT > InfoNode.m_ResourceTime && CompilerT > InfoNode.m_CompileStarted)
+                return QueueForCompilation(InfoNode);
+
             return false;
         }
 
@@ -1118,7 +1127,8 @@ namespace xresource_editor
         bool RetryFailedIfInputsChanged( info_node& InfoNode ) const
         {
             if (HasNoCompiler(InfoNode.m_Info.m_Guid.m_Type)) return false;
-            if (InfoNode.m_NewestDependencyTime > InfoNode.m_CompileStarted || InfoNode.m_DescriptorTime > InfoNode.m_CompileStarted)
+            if (InfoNode.m_NewestDependencyTime > InfoNode.m_CompileStarted || InfoNode.m_DescriptorTime > InfoNode.m_CompileStarted
+             || CompilerTime(InfoNode.m_Info.m_Guid.m_Type) > InfoNode.m_CompileStarted)
                 return QueueForCompilation(InfoNode);
             return false;
         }
@@ -4436,6 +4446,31 @@ namespace xresource_editor
         // descriptor-only so AddToCompilationQueueIfNeeded never calls getQueueIndexFromType
         // and asserts. Prefer fixing registration; this is the safe fallback.
         return true;
+    }
+
+    inline std::filesystem::file_time_type library_db::CompilerTime(xresource::type_guid Type) const
+    {
+        auto& LibMgr  = m_CompilationInstance.m_LibraryMgr;
+        auto  pPlugin = LibMgr.m_AssetPluginsDB.find(Type);
+        if (pPlugin == nullptr) return NoFileTime();
+
+        bool bDebug = false;
+        {
+            auto& Settings = m_CompilationInstance.m_Settings;
+            std::scoped_lock lk(Settings.m_Mutex);
+            bDebug = Settings.m_bUseDebugCompiler;
+        }
+
+        // The same choice as CompilingThreadWorker: the configuration asked for, the other one when only that one is configured
+        const std::wstring& Wanted = bDebug ? pPlugin->m_DebugCompiler   : pPlugin->m_ReleaseCompiler;
+        const std::wstring& Other  = bDebug ? pPlugin->m_ReleaseCompiler : pPlugin->m_DebugCompiler;
+        const std::wstring& Path   = Wanted.empty() ? Other : Wanted;
+        if (Path.empty()) return NoFileTime();
+
+        const std::filesystem::path Full = std::filesystem::path(std::format(L"{}\\{}", LibMgr.m_ProjectPath, Path)).lexically_normal();
+        std::error_code             Ec;
+        const auto                  Time = std::filesystem::last_write_time(CompilerExecutablePath(Full.wstring()), Ec);
+        return Ec ? NoFileTime() : Time;
     }
 
 
