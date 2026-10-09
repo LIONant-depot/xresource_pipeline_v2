@@ -1049,7 +1049,8 @@ namespace xresource_editor
         // at this point in the header).
         inline bool HasNoCompiler(xresource::type_guid Type) const;
 
-        bool AddToCompilationQueueIfNeeded( const info_db& InfoTypeDB, info_node& InfoNode) const
+        // bForce: queue it even when its timestamps say it is up to date (RecompileAllResources) - the rest of the rules (no compiler, already queued) still apply.
+        bool AddToCompilationQueueIfNeeded( const info_db& InfoTypeDB, info_node& InfoNode, bool bForce = false) const
         {
             //NOTE: If a node is "deleted" should we let it compile???
 
@@ -1084,7 +1085,7 @@ namespace xresource_editor
                     break;
             }
 
-            if (InfoNode.m_NewestDependencyTime > InfoNode.m_ResourceTime || InfoNode.m_DescriptorTime > InfoNode.m_ResourceTime)
+            if (bForce || InfoNode.m_NewestDependencyTime > InfoNode.m_ResourceTime || InfoNode.m_DescriptorTime > InfoNode.m_ResourceTime)
                 return QueueForCompilation(InfoNode);
 
             return false;
@@ -2819,9 +2820,13 @@ namespace xresource_editor
                     {
                         for (auto& I : Entry->m_InfoDataBase)
                         {
+                            // Forced: with both times reset to the same NoFileTime() only a resource whose newest dependency
+                            // resolved to a real file time was queued; one with no dependencies, or whose dependency paths
+                            // did not resolve (e.g. a dependencies.txt written on Windows, lower-cased, read on a
+                            // case-sensitive file system), was silently skipped and kept its old compiled data.
                             I.second.m_DescriptorTime = NoFileTime();
                             I.second.m_ResourceTime   = NoFileTime();
-                            L.second->AddToCompilationQueueIfNeeded(*Entry, I.second);
+                            L.second->AddToCompilationQueueIfNeeded(*Entry, I.second, true);
                         }
                     });
                 }
