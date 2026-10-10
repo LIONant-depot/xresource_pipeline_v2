@@ -1941,12 +1941,17 @@ namespace xresource_editor
         xerr CreatePath( const std::wstring_view Path) const noexcept
         {
             std::error_code         ec;
-            std::filesystem::path   path{ Path };
+            std::wstring            Normalized{ Path };
+#ifndef _WIN32
+            // the paths of the editor are built with '\' (Windows): std::filesystem on Linux takes that for a part of a name and cannot make the folders in between
+            std::replace(Normalized.begin(), Normalized.end(), L'\\', L'/');
+#endif
+            std::filesystem::path   path{ Normalized };
 
             std::filesystem::create_directories(path, ec);
             if (ec)
             {
-                printf("Fail to create a directory [%s] with error [%s]", xstrtool::To(Path).c_str(), ec.message().c_str());
+                printf("Fail to create a directory [%s] with error [%s]\n", xstrtool::To(Path).c_str(), ec.message().c_str()); std::fflush(stdout);
                 return xerr::create_f<xerr::default_states, "Fail to create a directory">();
             }
 
@@ -2906,7 +2911,7 @@ namespace xresource_editor
 
                 if (auto Err = CreatePath(FinalPath); Err)
                 {
-                    printf("Fail to create a directory [%s] with error [%s]", xstrtool::To(FinalPath).c_str(), std::string(Err.getMessage()).c_str() );
+                    printf("Fail to create a directory [%s] with error [%s]\n", xstrtool::To(FinalPath).c_str(), std::string(Err.getMessage()).c_str()); std::fflush(stdout);
                     exit(1);
                 }
 
@@ -2921,7 +2926,7 @@ namespace xresource_editor
                 xproperty::settings::context Context;
                 if ( auto Err = Info.Serialize( false, FinalPath, Context); Err)
                 {
-                    printf("Fail to serialize the info file [%s] with error [%s]", xstrtool::To(FinalPath).c_str(), std::string(Err.getMessage()).c_str());
+                    printf("Fail to serialize the info file [%s] with error [%s]\n", xstrtool::To(FinalPath).c_str(), std::string(Err.getMessage()).c_str()); std::fflush(stdout);
                     exit(1);
                 }
 
