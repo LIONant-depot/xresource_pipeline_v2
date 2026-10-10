@@ -419,10 +419,14 @@ namespace xresource_editor
         {
             if (Path.empty()) return false;
             std::error_code Ec;
+            std::wstring Normalized = Path;
+#ifndef _WIN32
+            std::replace(Normalized.begin(), Normalized.end(), L'\\', L'/');             // a path written on Windows: std::filesystem here would take "Assets\a\b.png" for one name
+#endif
             for (auto& L : m_AssetMgr.m_mLibraryDB)
             {
                 const std::filesystem::path Root = L.second->m_Library.m_Path;
-                const std::filesystem::path Given(Path);
+                const std::filesystem::path Given(Normalized);
                 const auto Candidate = Given.is_absolute() ? Given : Root / Given;
                 if (!std::filesystem::exists(Candidate, Ec)) continue;
                 const auto Rel = Candidate.lexically_normal().lexically_relative((Root / L"Assets").lexically_normal());

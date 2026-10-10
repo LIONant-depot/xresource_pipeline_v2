@@ -3451,10 +3451,14 @@ namespace xresource_editor
             if (Path.empty()) return false;
             std::error_code Ec;
             bool bFound = false;
+            std::wstring Normalized = Path;
+#ifndef _WIN32
+            std::replace(Normalized.begin(), Normalized.end(), L'\\', L'/');             // a path written on Windows ("Assets\Textures\a.png"): std::filesystem here would take it for one name
+#endif
             for (auto& L : m_mLibraryDB)
             {
                 const std::filesystem::path Root = L.second->m_Library.m_Path;
-                const std::filesystem::path Given(Path);
+                const std::filesystem::path Given(Normalized);
                 const auto Candidate = Given.is_absolute() ? Given : Root / Given;
                 if (!std::filesystem::exists(Candidate, Ec)) continue;
                 const auto Rel = Candidate.lexically_normal().lexically_relative(Root.lexically_normal());
@@ -3664,7 +3668,7 @@ namespace xresource_editor
             // used to assume back when only one library could ever exist.
             {
                 auto RootName = LibraryPath;
-                RootName = RootName.substr(RootName.rfind(L'\\') + 1);
+                RootName = RootName.substr(RootName.find_last_of(L"\\/") + 1);           // either separator: a path of this system ('/' on Linux) or one written on Windows
                 RootName = RootName.substr(0, RootName.rfind(L'.'));
 
                 bool bHasRootFolder = false;
