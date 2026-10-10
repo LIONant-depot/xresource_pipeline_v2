@@ -5,6 +5,7 @@
 // Resource picking for xproperty inspectors: a property that references a resource shows the resource's name as a button
 // and opens the asset browser as a popup to choose another. Used by every editor with resource-reference properties.
 #include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_asset_browser.h"
+#include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_resource_hint.h"
 #include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
 #include "dependencies/xeditor/include/xeditor/hint.h"
 
@@ -56,16 +57,19 @@ namespace xresource_editor
         return {};
     }
 
-    // Draws the picture of a resource: its own thumbnail when it has one, the picture of its type otherwise.
+    // Draws the picture of a resource: its own thumbnail when it has one, the picture of its type otherwise. Hovering it shows the hover card of the resource (ShowResourceHint), the same
+    // one the resource browser shows on its tiles.
     inline void RenderReferencePicture(const xresource::full_guid& Guid, float Size) noexcept
     {
         plugin_icon_ref Picture;
         if (g_ReferenceHost.m_Thumbnail && !Guid.empty()) Picture = g_ReferenceHost.m_Thumbnail(Guid);
+        const plugin_icon_ref Thumbnail = Picture;                       // the resource's own picture when it has one (the glyph of its type below is not a thumbnail)
         if (!Picture.isValid()) Picture = xresource_editor::g_LibMgr.m_AssetPluginsDB.getIconRef(Guid.m_Type, 0);
         if (Picture.isValid())
             ImGui::Image((ImTextureRef)(void*)Picture.m_pTexture, ImVec2(Size, Size), ImVec2(Picture.m_U0, Picture.m_V0), ImVec2(Picture.m_U1, Picture.m_V1));
         else
             ImGui::Dummy(ImVec2(Size, Size));
+        if (xeditor::hint::IsItemHoveredForCard()) ShowResourceHint(Guid, Thumbnail);        // an empty reference with a type gets its card too ("(none)")
     }
 
     // What a resource reference widget does besides showing the resource.

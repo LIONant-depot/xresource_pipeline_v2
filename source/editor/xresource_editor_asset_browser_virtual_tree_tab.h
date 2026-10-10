@@ -4,6 +4,7 @@
 #include "dependencies/xeditor/include/xeditor/save_all.h"
 #include "dependencies/xeditor/include/xeditor/grouped_list.h"
 #include "xresource_editor_asset_mgr.h"
+#include "xresource_editor_resource_hint.h"
 
 #include "imgui.h"
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
@@ -2825,140 +2826,9 @@ namespace xresource_editor
                 // bIsRenamingThis) - no separate popup needed any more.
 
 
-                if (ImGui::IsItemHovered() && !bBeenDrag)
-                {
-                    // Real 2-column table instead of one hand-padded multi-line string ("Instance Name
-                    //        : {}", "Type Name            : {}", ...) - that padding was tuned to make
-                    // every label the same CHARACTER count, which only lines up under a monospace font;
-                    // a proportional font (E29's own Segoe UI theme) renders each label at a different
-                    // pixel width, breaking the alignment (same bug class as xproperty's own Help()
-                    // tooltip - see its fix in xPropertyImGuiInspector.cpp). A table's own column
-                    // boundaries align by pixel width, not character count, so this is correct for any
-                    // font. Width also capped via SetNextWindowSizeConstraints, matching the inspector's
-                    // own tooltips, so a resource with many dependencies can't grow this to fill the
-                    // screen - direct user request.
-                    std::string InstanceGuidText, TypeGuidText, InfoReadText, InfoWriteText, DescWriteText, ResWriteText, DependenciesText, CommentText;
-
-                    m_AssetMgr.getNodeInfo( m_SelectedLibrary, E.m_ResourceGUID, [&]( xresource_editor::library_db::info_node& NodeInfo )
-                    {
-                        InstanceGuidText = std::format("{:X}", NodeInfo.m_Info.m_Guid.m_Instance.m_Value);
-                        TypeGuidText     = std::format("{:X}", NodeInfo.m_Info.m_Guid.m_Type.m_Value);
-                        InfoReadText     = std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_InfoReadTime));
-                        InfoWriteText    = std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_InfoTime));
-                        DescWriteText    = NodeInfo.m_bHasDescriptor ? std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_DescriptorTime)) : "Never";
-                        ResWriteText     = NodeInfo.m_bHasResource   ? std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_ResourceTime)) : "Never";
-
-                        DependenciesText = [&]()->std::string
-                        {
-                            if (NodeInfo.m_bHasDependencies == false || false == NodeInfo.m_Dependencies.hasDependencies() ) return {"No Dependencies"};
-
-                            std::string Dependencies;
-
-                            if (NodeInfo.m_Dependencies.m_Resources.empty() == false)
-                            {
-                                std::string Assets = std::format("\n    Resources Count: {}", NodeInfo.m_Dependencies.m_Resources.size());
-                                for (auto& E : NodeInfo.m_Dependencies.m_Resources)
-                                {
-                                    //Assets = std::format("{}\n        [{}] {}", Assets, static_cast<int>(&E - NodeInfo.m_Dependencies.m_Resources.data()), E);
-                                }
-
-                                Dependencies += Assets;
-                            }
-
-                            if ( NodeInfo.m_Dependencies.m_Assets.empty() == false )
-                            {
-                                std::string Assets = std::format("\n    Asset Count: {}", NodeInfo.m_Dependencies.m_Assets.size() );
-                                for (auto& E : NodeInfo.m_Dependencies.m_Assets)
-                                {
-                                    Assets = std::format( "{}\n        [{}] {}", Assets, static_cast<int>(&E - NodeInfo.m_Dependencies.m_Assets.data()), xstrtool::To(E) );
-                                }
-
-                                Dependencies += Assets;
-                            }
-
-                            if (NodeInfo.m_Dependencies.m_VirtualAssets.empty() == false)
-                            {
-                                std::string Assets = std::format("\n    Virtual Asset Count: {}", NodeInfo.m_Dependencies.m_VirtualAssets.size());
-                                for (auto& E : NodeInfo.m_Dependencies.m_VirtualAssets)
-                                {
-                                    Assets = std::format("{}\n        [{}] {}", Assets, static_cast<int>(&E - NodeInfo.m_Dependencies.m_VirtualAssets.data()), xstrtool::To(E) );
-                                }
-
-                                Dependencies += Assets;
-                            }
-
-                            return Dependencies;
-                        }();
-
-                        CommentText = NodeInfo.m_Info.m_Comment;
-                    });
-
-                    xresource_editor::PlaceTooltipAwayFromEdges();
-                    ImGui::SetNextWindowSizeConstraints(ImVec2(0, 0), ImVec2(480.0f, FLT_MAX));
-                    xeditor::hint::PlaceAwayFromEdges(16.0f, ImVec2(380.0f, 220.0f)); ImGui::BeginTooltip();
-
-                    const bool bHasThumbnail = E.m_Thumbnail.isValid();
-                    const auto Row = [](const char* pLabel, const std::string& Value) noexcept
-                    {
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0); ImGui::TextDisabled("%s", pLabel);
-                        ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(Value.c_str());
-                    };
-                    const std::string TypeNameText = E.m_TypeNameView.empty() ? std::string("<Unknown>") : std::string(E.m_TypeNameView);
-
-                    // A real per-resource thumbnail (not the generic type icon/glyph every tile falls
-                    // back to) gets a big preview at the top of the tooltip - explicit user request, "a
-                    // nice big look at the icon". Same texture/UV rect the tile itself draws small
-                    // (DrawIcon/E.m_Thumbnail above), just at the thumbnail cache's own native
-                    // resolution instead of tile size, and with no tint (WrappedButton2's Color tint is
-                    // for the type-glyph/atlas-icon path, not for showing a rendered thumbnail as-is).
-                    // The 4 identity fields sit beside it (explicit follow-up request) instead of below
-                    // in the main table, so they read together with the image at a glance; every other
-                    // field stays in the full-width table underneath either way.
-                    if (bHasThumbnail)
-                    {
-                        constexpr float PreviewSize = 128.0f;
-                        ImGui::Image((ImTextureRef)(void*)E.m_Thumbnail.m_pTexture, ImVec2(PreviewSize, PreviewSize)
-                                    , ImVec2(E.m_Thumbnail.m_U0, E.m_Thumbnail.m_V0), ImVec2(E.m_Thumbnail.m_U1, E.m_Thumbnail.m_V1));
-                        ImGui::SameLine();
-                        ImGui::BeginGroup();
-                        if (ImGui::BeginTable("##ResourceTooltipHeader", 2, ImGuiTableFlags_SizingFixedFit))
-                        {
-                            Row("Instance Name:", StringOne);
-                            Row("Type Name:",     TypeNameText);
-                            Row("Instance GUID:", InstanceGuidText);
-                            Row("Type GUID:",     TypeGuidText);
-                            ImGui::EndTable();
-                        }
-                        ImGui::EndGroup();
-                        ImGui::Spacing();
-                    }
-
-                    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440.0f);
-
-                    if (ImGui::BeginTable("##ResourceTooltip", 2, ImGuiTableFlags_SizingFixedFit))
-                    {
-                        // Already shown beside the image above when there is one - not repeated here.
-                        if (!bHasThumbnail)
-                        {
-                            Row("Instance Name:", StringOne);
-                            Row("Type Name:",     TypeNameText);
-                            Row("Instance GUID:", InstanceGuidText);
-                            Row("Type GUID:",     TypeGuidText);
-                        }
-                        Row("Info Last Read:",         InfoReadText);
-                        Row("Info Last Write:",        InfoWriteText);
-                        Row("Descriptor Last Write:",  DescWriteText);
-                        Row("Resource Last Write:",    ResWriteText);
-                        Row("Dependencies:",           DependenciesText);
-                        Row("Comment:",                CommentText);
-
-                        ImGui::EndTable();
-                    }
-
-                    ImGui::PopTextWrapPos();
-                    ImGui::EndTooltip();
-                }
+                // The hover card of a resource (name, type, the two ids, times, dependencies, comment, a big thumbnail): the one every resource picture uses (xresource_editor_resource_hint.h)
+                if (xeditor::hint::IsItemHoveredForCard() && !bBeenDrag)
+                    xresource_editor::ShowResourceHint(E.m_ResourceGUID, E.m_Thumbnail, m_AssetMgr, m_SelectedLibrary);
 
 
                 //   if (E.m_ResourceGUID.m_Type == xresource_editor::folder_type_guid_v)ImGui::PopStyleColor(1);
