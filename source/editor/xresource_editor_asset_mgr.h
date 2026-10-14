@@ -1113,7 +1113,9 @@ namespace xresource_editor
 
             // Insert the entry in the queue
             {
-                xcontainer::lock::scope Lk(std::as_const(m_CompilationInstance.m_Queue));
+                // The writer lock: push changes the queue, and std::as_const here took the READER lock, the same one the compilation job holds while it pops
+                // (TSan: a data race between this push and queue::pop).
+                xcontainer::lock::scope Lk(m_CompilationInstance.m_Queue);
                 m_CompilationInstance.m_Queue.get()[QueueEntry.m_Priority].push(std::move(QueueEntry));
             }
             m_CompilationInstance.StartCompilation();
@@ -1232,6 +1234,11 @@ namespace xresource_editor
             // This is the only asset path that users control all other ones are control by the system
             m_lMonitorAssetsThreads.emplace_back(std::make_unique<std::thread>(MonitorAssetFileChangesPerPath, std::ref(*this), std::wstring(L"assets")));
 
+            // The engine's sources a resource may include (a material's shader includes the renderer's: cache/dependencies/xlionrender/src/shaders/...):
+            // a running editor recompiles what includes a changed one, as it does at startup (its dependency times). Build output also changes in here
+            // all the time - only the files some resource lists matter, the rest is ignored quietly
+            m_lMonitorAssetsThreads.emplace_back(std::make_unique<std::thread>(MonitorAssetFileChangesPerPath, std::ref(*this), std::wstring(L"cache/dependencies")));
+
             // NOTE: Here casing does not matter...
             // These are all the paths where a descriptor can exist, all other paths will be ignored.
             m_lMonitorDescriptorsThreads.emplace_back(std::make_unique<std::thread>(MonitorResourceFileChangesPerPath, std::ref(*this), std::wstring(L"descriptors")));
@@ -1338,7 +1345,8 @@ namespace xresource_editor
 
                     if (false == bFoundAsset)
                     {
-                        std::wcout << L"File was modified but is not part of our asset list: " << file_path << L" In library " << FileMonitorChanges.m_LibraryDB.m_Library.m_Path << L"\n";
+                        if (AssetsPath != L"cache/dependencies")        // (build output there: constant, never ours)
+                            std::wcout << L"File was modified but is not part of our asset list: " << file_path << L" In library " << FileMonitorChanges.m_LibraryDB.m_Library.m_Path << L"\n";
                     }
                     // Make sure the file still exists
                     else if ( std::error_code Ec; std::filesystem::exists(FullPath, Ec) == false || Ec )
@@ -1748,10 +1756,13 @@ namespace xresource_editor
                             std::error_code DependencyEc;
                             Asset.m_LastWriteTime   = std::filesystem::last_write_time(FullPath, DependencyEc);
                             if (DependencyEc) Asset.m_LastWriteTime = std::filesystem::file_time_type::clock::now();
-                            NewestDependencyTime    = std::max(NewestDependencyTime, Asset.m_LastWriteTime);
                         }
                         , [&](library_db::asset& Asset)
                         {
+                            // Every resource that depends on the file takes its time (called after the create above too). It used to be taken only by the
+                            // first resource to list the file: a shader include shared by several materials (xlionrender_surfel_gi.glsl) left the others
+                            // compiled against the old include for good
+                            NewestDependencyTime = std::max(NewestDependencyTime, Asset.m_LastWriteTime);
                             bool bFound = false;
                             for (auto& X : Asset.m_lChildLinks)
                                 if (X == Info.m_Guid)
