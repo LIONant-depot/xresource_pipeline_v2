@@ -131,6 +131,9 @@ namespace xresource_editor
                             int n = 0;
                             for (auto& I : InfoDB->m_InfoDataBase)
                             {
+                                // A picker of a reference never lists a virtual resource: only its owner assigns it
+                                if (m_Browser.isPopup() && xresource_editor::library_db::IsVirtual(I.second)) continue;
+
                                 ImGui::PushID(n);
 
                                 std::string TypeView;

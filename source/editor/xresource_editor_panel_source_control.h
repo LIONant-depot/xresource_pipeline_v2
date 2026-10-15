@@ -109,7 +109,7 @@ namespace xresource_editor
     // Classifies a library-root-relative, NormalizeKey'd (lowercase, backslash-normalized) pending
     // path - path-based, not resource-guid-based, deliberately: git status (or a deleted file) only
     // ever gives us a path, which may not even resolve to a currently-loaded resource. Mirrors the
-    // real on-disk roots library::m_UserDescriptorPath/m_SysDescriptorPath/m_ResourcePath establish
+    // real on-disk roots library::m_UserDescriptorPath/m_ResourcePath establish
     // (xresource_editor_asset_mgr.h) and process_info_job::LoadInfo's own DependencyPath formula for the Logs root -
     // every one of them shares the same "<TypeName>\<xx>\<yy>\<hexInstance...>" shape right after its
     // own root segment (the instance hex is NOT zero-padded to a fixed width - e.g. a real Folder

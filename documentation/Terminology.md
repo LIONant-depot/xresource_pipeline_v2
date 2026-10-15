@@ -107,6 +107,11 @@ An example of this could be the font compiler. This compiler may generated a tex
 later will be compile by the texture compiler. 
 This allows any compiler to use the entire resource pipeline as well to do their job.
 
+Its descriptor is an ordinary one (in the Descriptors folder, in source control) whose Info.txt links the resource that generated it, its owner, as the parent:
+the owner acts as its folder. A virtual resource is made right after its owner, in the run group of the owner, and the ones of one owner compile in the order
+of their run groups. Only the owner and the virtual resources of the same owner may use it (a compile that uses one of another owner fails). One that its owner
+no longer lists (the model lost a material) stays with its edits and is not compiled.
+
 # `Resource Dependency`
 A resource may depend on other resources. For instance a material instance may depend in texture resource 
 and material resources. These dependencies are track by the system.

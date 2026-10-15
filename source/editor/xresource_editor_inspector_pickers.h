@@ -421,7 +421,7 @@ namespace xresource_editor
                 bool bAccept = Output.m_Type == PayloadData.m_Source.m_Type;
                 if (not bAccept) for (auto& Type : Filters) if (PayloadData.m_Source.m_Type == Type) { bAccept = true; break; }
 
-                if (bAccept && ImGui::AcceptDragDropPayload("DESCRIPTOR_GUID"))
+                if (bAccept && !xresource_editor::g_LibMgr.IsVirtualResource(PayloadData.m_Source) && ImGui::AcceptDragDropPayload("DESCRIPTOR_GUID"))
                 {
                     Output = PayloadData.m_Source;
                     if (g_AssetBrowserPopup.isVisible()) g_AssetBrowserPopup.ClosePopup();
@@ -443,7 +443,7 @@ namespace xresource_editor
             bool bAccept = SelectedAsset.m_Type == Output.m_Type;
             for (auto& Type : Filters)
                 if (SelectedAsset.m_Type == Type) { bAccept = true; break; }
-            if (bAccept) Output = SelectedAsset;
+            if (bAccept && !xresource_editor::g_LibMgr.IsVirtualResource(SelectedAsset)) Output = SelectedAsset;
         }
 
         Open = g_AssetBrowserPopup.isVisible();

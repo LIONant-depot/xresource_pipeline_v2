@@ -1711,7 +1711,8 @@ namespace xresource_editor
                 float                   m_Distance;
                 bool                    m_bHasChildren:1
                 ,                       m_bModified:1
-                ,                       m_bDeleted:1;
+                ,                       m_bDeleted:1
+                ,                       m_bUnused:1;        // a virtual resource its owner no longer makes (library_db::m_Chain): drawn dimmed
                 // 0 for a normal top-level item; >0 for a VIRTUAL child spliced in right after its
                 // parent (see CollectItems' own comment). m_VirtualGroupRoot is that item's immediate
                 // parent's guid, used purely to paint a shared tinted background behind consecutive
@@ -1776,6 +1777,7 @@ namespace xresource_editor
                                 temp_node Temp;
 
                                 Temp.m_ResourceGUID = E;
+                                Temp.m_bUnused      = Depth > 0 && !Lib->m_Chain.IsListed(E);
                                 Temp.m_VirtualDepth = Depth;
                                 Temp.m_VirtualGroupRoot = GroupRoot;
 
@@ -1847,7 +1849,8 @@ namespace xresource_editor
                                 // when expanded) so a match inside a collapsed item is still
                                 // discoverable - the fuzzy-rank pass just below flattens the results
                                 // the same way Explorer/VS Code search does.
-                                if (E.m_Type != xresource_editor::folder::type_guid_v && TempNodes.back().m_bHasChildren
+                                // (a picker of a reference never lists them: only the owner of a virtual resource assigns it)
+                                if (E.m_Type != xresource_editor::folder::type_guid_v && TempNodes.back().m_bHasChildren && !m_Browser.isPopup()
                                     && (m_IsExpanded[E] || !m_Browser.m_SearchString.empty()))
                                 {
                                     Lib->m_InfoByTypeDataBase.FindAsReadOnly(E.m_Type
@@ -2078,7 +2081,7 @@ namespace xresource_editor
                 // the icon does), so it inherits whatever ImGuiCol_Text is pushed around the call site
                 // below - Color/pIcon-based tinting (the folder convention) wouldn't touch the label.
                 const bool  bIsVirtual  = E.m_VirtualDepth > 0;
-                const ImU32 LabelColor  = bIsVirtual ? IM_COL32(255, 159, 67, 255) : ImGui::ColorConvertFloat4ToU32(textColor);
+                const ImU32 LabelColor  = bIsVirtual ? (E.m_bUnused ? IM_COL32(150, 110, 70, 150) : IM_COL32(255, 159, 67, 255)) : ImGui::ColorConvertFloat4ToU32(textColor);
 
 
                 // Folders resolve their icon by the "Folder" plugin's TypeName (not by TypeGUID -
@@ -2334,7 +2337,8 @@ namespace xresource_editor
 
                     //ImGui::GetCurrentContext()->LastItemData.ID = static_cast<ImGuiID>(E.m_ResourceGUID.m_Instance.m_Value);
                     ImGui::PushID(static_cast<int>(E.m_ResourceGUID.m_Instance.m_Value));
-                    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
+                    // A virtual resource is not dragged: nothing but its owner uses it (no picker takes it, it cannot be moved to a folder)
+                    if (E.m_VirtualDepth == 0 && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
                     {
                         bBeenDrag = true;
 

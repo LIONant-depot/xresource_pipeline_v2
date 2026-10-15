@@ -166,6 +166,7 @@ namespace xresource_editor::commands
             {
                 Out += std::format("Name: {}\n", Node.m_Info.m_Name);
                 Out += std::format("Type: {:016X}\n", AssetGuid.m_Type.m_Value);
+                Out += std::format("Virtual: {}\n", xresource_editor::library_db::IsVirtual(Node) ? "yes" : "no");          // made by the compiler of its owner (the parent): no picker offers it
 
                 Out += std::format("Parents ({}):\n", Node.m_Info.m_RscLinks.size());
                 for (auto& Parent : Node.m_Info.m_RscLinks)

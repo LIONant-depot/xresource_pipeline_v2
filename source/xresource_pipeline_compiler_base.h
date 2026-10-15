@@ -52,7 +52,7 @@ namespace xresource_pipeline::compiler
             std::wstring          m_Assets                = {};
             std::wstring          m_Cache                 = {};
             std::wstring          m_CacheTemp             = {};
-            std::wstring          m_CachedDescriptors     = {};
+            std::wstring          m_CachedDescriptors     = {}; // generated data of virtual resources (their descriptors live in m_Descriptors)
             std::wstring          m_Resources             = {};
             std::wstring          m_ResourcesPlatforms    = {};
             std::wstring          m_ResourcesLogs         = {};
