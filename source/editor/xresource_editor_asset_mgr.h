@@ -4388,7 +4388,7 @@ namespace xresource_editor
                                     {
                                         const auto          Value        = VirtualGuid.m_Instance.m_Value;
                                         const std::wstring  TypeNameW    = xstrtool::To(pVPlugin->m_TypeName);
-                                        const std::wstring  RelativePath = std::format(L"\\{}\\{:02X}\\{:02X}\\{:016X}", TypeNameW, Value & 0xFF, (Value >> 8) & 0xFF, Value);
+                                        const std::wstring  RelativePath = std::format(L"\\{}\\{:02X}\\{:02X}\\{:X}", TypeNameW, Value & 0xFF, (Value >> 8) & 0xFF, Value);
 
                                         VirtualCascadeList.push_back(virtual_cascade_entry
                                         { .m_LibraryPath   = LibraryDB->m_Library.m_Path
