@@ -78,23 +78,27 @@ namespace xresource_pipeline::virtual_rsc
     XPROPERTY_REG(owned_list)
 
     // The descriptor of a virtual resource: made from Fresh when it does not exist, otherwise loaded and given only the fields the generator owns
-    // (CopyOwned(Existing, Fresh): copy those from Fresh into Existing). Written only when its text changed.
+    // (CopyOwned(Existing, Fresh): copy those from Fresh into Existing). Written only when its text changed. One that exists and cannot be read is the
+    // user's: it is left exactly as it is and false is returned (the caller says so in the compile log) - never replaced by a fresh one. Tolerate: a descriptor
+    // whose reading reports an error but was read (one that cross-checks another resource, such as an Anim Package on a skeleton that is not compiled yet) is
+    // still the user's descriptor: Tolerate(what was read) says so.
     template<typename T_DESCRIPTOR, typename T_COPY_OWNED>
-    inline void EmitDescriptor(const std::wstring& Folder, T_DESCRIPTOR& Fresh, T_COPY_OWNED&& CopyOwned) noexcept
+    [[nodiscard]] inline bool EmitDescriptor(const std::wstring& Folder, T_DESCRIPTOR& Fresh, T_COPY_OWNED&& CopyOwned, std::function<bool(const T_DESCRIPTOR&)> Tolerate = {}) noexcept
     {
         const auto Path = Folder + L"/Descriptor.txt";
         std::error_code Ec;
-        T_DESCRIPTOR Existing;
-        xproperty::settings::context Context;
-        if (std::filesystem::exists(Path, Ec) && !Existing.Serialize(true, Path, Context))
+        if (std::filesystem::exists(Path, Ec))
         {
+            T_DESCRIPTOR Existing;
+            xproperty::settings::context Context;
+            if (Existing.Serialize(true, Path, Context) && !(Tolerate && Tolerate(Existing))) return false;
             CopyOwned(Existing, Fresh);
             WriteIfChanged(Path, [&](const std::wstring& P) { xproperty::settings::context C; Existing.Serialize(false, P, C); });
+            return true;
         }
-        else
-        {
-            WriteIfChanged(Path, [&](const std::wstring& P) { xproperty::settings::context C; Fresh.Serialize(false, P, C); });
-        }
+
+        WriteIfChanged(Path, [&](const std::wstring& P) { xproperty::settings::context C; Fresh.Serialize(false, P, C); });
+        return true;
     }
 
     // The Info.txt of a virtual resource: its guid and the link to its owner are the generator's; the name and the rest are the user's once it exists

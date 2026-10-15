@@ -2228,6 +2228,18 @@ namespace xresource_editor
         // turned off, a font mode changed). They stay on disk with their edits; this is what "Remove unused imported resources" takes away. Shallowest first.
         std::vector<xresource::full_guid> UnusedVirtualsOf(const library::guid LibraryGUID, const xresource::full_guid Owner) noexcept
         {
+            const auto All = VirtualDescendantsOf(LibraryGUID, Owner);
+            std::vector<xresource::full_guid> Unused;
+            m_mLibraryDB.FindAsReadOnly(LibraryGUID, [&](const std::unique_ptr<library_db>& Library)
+            {
+                for (auto& G : All) if (!Library->m_Chain.IsListed(G)) Unused.push_back(G);
+            });
+            return Unused;
+        }
+
+        // Every resource that has the owner as its parent, and theirs in turn (the virtual resources of an owner, used or not), parents first
+        std::vector<xresource::full_guid> VirtualDescendantsOf(const library::guid LibraryGUID, const xresource::full_guid Owner) noexcept
+        {
             std::vector<xresource::full_guid> All, Frontier{ Owner };
             while (!Frontier.empty())
             {
@@ -2238,13 +2250,7 @@ namespace xresource_editor
                 for (auto& C : Children)
                     if (std::ranges::find(All, C) == All.end()) { All.push_back(C); Frontier.push_back(C); }
             }
-
-            std::vector<xresource::full_guid> Unused;
-            m_mLibraryDB.FindAsReadOnly(LibraryGUID, [&](const std::unique_ptr<library_db>& Library)
-            {
-                for (auto& G : All) if (!Library->m_Chain.IsListed(G)) Unused.push_back(G);
-            });
-            return Unused;
+            return All;
         }
 
         // Loads the descriptor folder of a virtual resource (its Info.txt is there) into the library, as the scan does: a restored one (an undo)

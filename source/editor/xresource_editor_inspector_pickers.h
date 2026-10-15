@@ -8,6 +8,7 @@
 #include "dependencies/xresource_pipeline_v2/source/editor/xresource_editor_resource_hint.h"
 #include "dependencies/xproperty/source/examples/imgui/xPropertyImGuiInspector.h"
 #include "dependencies/xeditor/include/xeditor/hint.h"
+#include "imgui_internal.h"                       // ImGui::GetCurrentContext()->ColorStack: what the last pushed colour is
 
 #include <cwchar>
 #include <cwctype>
@@ -197,6 +198,11 @@ namespace xresource_editor
                 Tip("Clear the reference");
             }
 
+            // The buttons are actions that work on a read only reference: they are drawn with the normal text colour, not the tint the inspector pushes on a read only row.
+            // That push is taken off for them (its colour backed up first) and put back after.
+            const ImVec4 Tint     = Style.Colors[ImGuiCol_Text];
+            const bool   bUntint  = bReadOnly && !ImGui::GetCurrentContext()->ColorStack.empty() && ImGui::GetCurrentContext()->ColorStack.back().Col == ImGuiCol_Text;
+            if (bUntint) ImGui::PopStyleColor();
             if (bReadOnly && Options.m_Lead)
             {
                 // The caller's button takes the width, then locate, then edit flush with the right border
@@ -218,6 +224,7 @@ namespace xresource_editor
                 ImGui::EndDisabled();
                 Tip("Find the resource in the resource browser");
             }
+            if (bUntint) ImGui::PushStyleColor(ImGuiCol_Text, Tint);
             ImGui::EndGroup();
             ImGui::EndGroup();
         }
@@ -229,7 +236,7 @@ namespace xresource_editor
     inline void RenderResourceReference(xproperty::inspector& Inspector, bool& bOpen, const xresource::full_guid& PreFullGuid) noexcept
     {
         bool bClear = false;
-        RenderResourceReferenceRow(reinterpret_cast<const void*>(std::hash<std::string_view>{}(Inspector.m_CurrentProperty.m_Path)), PreFullGuid, Inspector.m_CurrentProperty.m_Flags.m_bSmallResource, {}, bOpen, bClear);
+        RenderResourceReferenceRow(reinterpret_cast<const void*>(std::hash<std::string_view>{}(Inspector.m_CurrentProperty.m_Path)), PreFullGuid, Inspector.m_CurrentProperty.m_Flags.m_bSmallResource, { .m_bReadOnly = Inspector.m_CurrentProperty.m_Flags.m_bShowReadOnly }, bOpen, bClear);
         if (bClear) Inspector.m_CurrentProperty.m_bClearResource = true;
     }
 
