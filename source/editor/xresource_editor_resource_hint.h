@@ -29,7 +29,7 @@ namespace xresource_editor
         if (Guid.empty() && Guid.m_Type.empty()) return;                 // not even a type: nothing to say
 
         // The two ids are the resource's own, so they are there even when no library has it.
-        std::string Name, TypeName = "<Unknown>", InstanceGuidText, TypeGuidText, InfoReadText, InfoWriteText, DescWriteText, ResWriteText, DependenciesText, CommentText;
+        std::string Name, TypeName = "<Unknown>", InstanceGuidText, TypeGuidText, InfoReadText, InfoWriteText, DescWriteText, ResWriteText, CommentText;
         InstanceGuidText = std::format("{:016X}", Guid.m_Instance.m_Value);
         TypeGuidText     = std::format("{:016X}", Guid.m_Type.m_Value);
         if (const auto e = Mgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.find(Guid.m_Type); e != Mgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.end()) TypeName = Mgr.m_AssetPluginsDB.m_lPlugins[e->second].m_TypeName;
@@ -59,66 +59,57 @@ namespace xresource_editor
             return;
         }
 
-        // The resources it depends on and the virtual ones it made, named after the read (naming one reads its node: not while this one is read)
-        std::vector<xresource::full_guid> Resources, VirtualResources;
-        const auto Named = [&](const char* pTitle, const std::vector<xresource::full_guid>& List) -> std::string
+        // What it depends on, as lines under a "Dependencies:" title that use the whole width of the card (a list in the value column of the
+        // table wrapped): Level 0 a group ("Resources: 5"), level 1 one of its entries. The resources and the virtual ones are named after the
+        // read (naming one reads its node: not while this one is read).
+        struct dep_line { int m_Level; std::string m_Text; };
+        std::vector<dep_line>               DepLines;
+        std::vector<xresource::full_guid>   Resources, VirtualResources;
+        bool                                bHasDependencies = false;
+        const auto Named = [&](const char* pTitle, const std::vector<xresource::full_guid>& List)
         {
-            if (List.empty()) return {};
-            std::string Out = std::format("\n    {}: {}", pTitle, List.size());
+            if (List.empty()) return;
+            DepLines.push_back({ 0, std::format("{}: {}", pTitle, List.size()) });
             for (auto& G : List)
             {
                 std::string RName = "<Unknown>", RType = "<Unknown>";
                 if (!Library.empty()) Mgr.getNodeInfo(Library, G, [&](library_db::info_node& N) { RName = N.m_Info.m_Name; });
                 else                  Mgr.getNodeInfo(G, [&](library_db::info_node& N) { RName = N.m_Info.m_Name; });
                 if (const auto e = Mgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.find(G.m_Type); e != Mgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.end()) RType = Mgr.m_AssetPluginsDB.m_lPlugins[e->second].m_TypeName;
-                Out += std::format("\n        [{}] {} ({}, {:016X})", static_cast<int>(&G - List.data()), RName, RType, G.m_Instance.m_Value);
+                DepLines.push_back({ 1, std::format("[{}] {} ({}, {:016X})", static_cast<int>(&G - List.data()), RName, RType, G.m_Instance.m_Value) });
             }
-            return Out;
+        };
+        std::vector<dep_line> AssetLines;
+        const auto Paths = [&](const char* pTitle, const std::vector<std::wstring>& List)
+        {
+            if (List.empty()) return;
+            AssetLines.push_back({ 0, std::format("{}: {}", pTitle, List.size()) });
+            for (auto& A : List) AssetLines.push_back({ 1, std::format("[{}] {}", static_cast<int>(&A - List.data()), xstrtool::To(A)) });
         };
 
         const auto Read = [&](library_db::info_node& NodeInfo)
         {
-            if (NodeInfo.m_bHasDependencies)
+            bHasDependencies = NodeInfo.m_bHasDependencies && NodeInfo.m_Dependencies.hasDependencies();
+            if (bHasDependencies)
             {
                 Resources        = NodeInfo.m_Dependencies.m_Resources;
                 VirtualResources = NodeInfo.m_Dependencies.m_VirtualResources;
+                Paths("Assets",         NodeInfo.m_Dependencies.m_Assets);
+                Paths("Virtual Assets", NodeInfo.m_Dependencies.m_VirtualAssets);
             }
             Name            = NodeInfo.m_Info.m_Name;
             InfoReadText    = std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_InfoReadTime));
             InfoWriteText   = std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_InfoTime));
             DescWriteText   = NodeInfo.m_bHasDescriptor ? std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_DescriptorTime)) : "Never";
             ResWriteText    = NodeInfo.m_bHasResource   ? std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_ResourceTime)) : "Never";
-
-            DependenciesText = [&]() -> std::string
-            {
-                if (NodeInfo.m_bHasDependencies == false || false == NodeInfo.m_Dependencies.hasDependencies()) return { "No Dependencies" };
-
-                std::string Dependencies;
-                if (NodeInfo.m_Dependencies.m_Assets.empty() == false)
-                {
-                    std::string Assets = std::format("\n    Asset Count: {}", NodeInfo.m_Dependencies.m_Assets.size());
-                    for (auto& A : NodeInfo.m_Dependencies.m_Assets)
-                        Assets = std::format("{}\n        [{}] {}", Assets, static_cast<int>(&A - NodeInfo.m_Dependencies.m_Assets.data()), xstrtool::To(A));
-                    Dependencies += Assets;
-                }
-
-                if (NodeInfo.m_Dependencies.m_VirtualAssets.empty() == false)
-                {
-                    std::string Assets = std::format("\n    Virtual Asset Count: {}", NodeInfo.m_Dependencies.m_VirtualAssets.size());
-                    for (auto& A : NodeInfo.m_Dependencies.m_VirtualAssets)
-                        Assets = std::format("{}\n        [{}] {}", Assets, static_cast<int>(&A - NodeInfo.m_Dependencies.m_VirtualAssets.data()), xstrtool::To(A));
-                    Dependencies += Assets;
-                }
-                return Dependencies;
-            }();
-
-            CommentText = NodeInfo.m_Info.m_Comment;
+            CommentText     = NodeInfo.m_Info.m_Comment;
         };
         if (!Library.empty()) Mgr.getNodeInfo(Library, Guid, [&](library_db::info_node& NodeInfo) { Read(NodeInfo); });
         else                  Mgr.getNodeInfo(Guid, [&](library_db::info_node& NodeInfo) { Read(NodeInfo); });
         if (Name.empty()) Name = "<Unknown>";
-        if (const auto Listed = Named("Resources", Resources) + Named("Virtual Resources", VirtualResources); !Listed.empty())
-            DependenciesText = DependenciesText == "No Dependencies" ? Listed : Listed + DependenciesText;
+        Named("Resources", Resources);
+        Named("Virtual Resources", VirtualResources);
+        DepLines.insert(DepLines.end(), AssetLines.begin(), AssetLines.end());
 
         // Starts small and grows to its content, always inside the window it is drawn in.
         // Owned by the resource (not by the item: an image has no id of its own), so the size measured for one resource is known the next time its card opens, wherever it is hovered.
@@ -146,7 +137,8 @@ namespace xresource_editor
             ImGui::Spacing();
         }
 
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 440.0f);
+        const float Left = ImGui::GetCursorPosX();
+        ImGui::PushTextWrapPos(Left + 440.0f);
         if (ImGui::BeginTable("##ResourceHint", 2, ImGuiTableFlags_SizingFixedFit))
         {
             if (!bHasThumbnail)
@@ -160,9 +152,32 @@ namespace xresource_editor
             Row("Info Last Write:",        InfoWriteText);
             Row("Descriptor Last Write:",  DescWriteText);
             Row("Resource Last Write:",    ResWriteText);
-            Row("Dependencies:",           DependenciesText);
-            Row("Comment:",                CommentText);
+            if (!bHasDependencies) Row("Dependencies:", "None");
             ImGui::EndTable();
+        }
+
+        // The dependencies from the card's left edge: the whole width for the names and paths
+        if (bHasDependencies)
+        {
+            ImGui::TextDisabled("Dependencies:");
+            constexpr float IndentPerLevel = 12.0f;
+            for (const auto& L : DepLines)
+            {
+                // Indent (not a cursor move): a line that wraps goes on under its own start
+                const float Indent = IndentPerLevel * float(L.m_Level + 1);
+                ImGui::Indent(Indent);
+                if (L.m_Level == 0) ImGui::TextDisabled("%s", L.m_Text.c_str());
+                else                ImGui::TextUnformatted(L.m_Text.c_str());
+                ImGui::Unindent(Indent);
+            }
+        }
+
+        if (!CommentText.empty())
+        {
+            ImGui::TextDisabled("Comment:");
+            ImGui::Indent(12.0f);
+            ImGui::TextUnformatted(CommentText.c_str());
+            ImGui::Unindent(12.0f);
         }
         ImGui::PopTextWrapPos();
         g_ResourceHintCard.End();
