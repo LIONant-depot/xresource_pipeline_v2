@@ -59,8 +59,30 @@ namespace xresource_editor
             return;
         }
 
+        // The resources it depends on and the virtual ones it made, named after the read (naming one reads its node: not while this one is read)
+        std::vector<xresource::full_guid> Resources, VirtualResources;
+        const auto Named = [&](const char* pTitle, const std::vector<xresource::full_guid>& List) -> std::string
+        {
+            if (List.empty()) return {};
+            std::string Out = std::format("\n    {}: {}", pTitle, List.size());
+            for (auto& G : List)
+            {
+                std::string RName = "<Unknown>", RType = "<Unknown>";
+                if (!Library.empty()) Mgr.getNodeInfo(Library, G, [&](library_db::info_node& N) { RName = N.m_Info.m_Name; });
+                else                  Mgr.getNodeInfo(G, [&](library_db::info_node& N) { RName = N.m_Info.m_Name; });
+                if (const auto e = Mgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.find(G.m_Type); e != Mgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.end()) RType = Mgr.m_AssetPluginsDB.m_lPlugins[e->second].m_TypeName;
+                Out += std::format("\n        [{}] {} ({}, {:016X})", static_cast<int>(&G - List.data()), RName, RType, G.m_Instance.m_Value);
+            }
+            return Out;
+        };
+
         const auto Read = [&](library_db::info_node& NodeInfo)
         {
+            if (NodeInfo.m_bHasDependencies)
+            {
+                Resources        = NodeInfo.m_Dependencies.m_Resources;
+                VirtualResources = NodeInfo.m_Dependencies.m_VirtualResources;
+            }
             Name            = NodeInfo.m_Info.m_Name;
             InfoReadText    = std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_InfoReadTime));
             InfoWriteText   = std::format("{:%Y-%m-%d %I:%M:%S %p %Z}", ConvertToStdTime(NodeInfo.m_InfoTime));
@@ -72,9 +94,6 @@ namespace xresource_editor
                 if (NodeInfo.m_bHasDependencies == false || false == NodeInfo.m_Dependencies.hasDependencies()) return { "No Dependencies" };
 
                 std::string Dependencies;
-                if (NodeInfo.m_Dependencies.m_Resources.empty() == false)
-                    Dependencies += std::format("\n    Resources Count: {}", NodeInfo.m_Dependencies.m_Resources.size());
-
                 if (NodeInfo.m_Dependencies.m_Assets.empty() == false)
                 {
                     std::string Assets = std::format("\n    Asset Count: {}", NodeInfo.m_Dependencies.m_Assets.size());
@@ -98,6 +117,8 @@ namespace xresource_editor
         if (!Library.empty()) Mgr.getNodeInfo(Library, Guid, [&](library_db::info_node& NodeInfo) { Read(NodeInfo); });
         else                  Mgr.getNodeInfo(Guid, [&](library_db::info_node& NodeInfo) { Read(NodeInfo); });
         if (Name.empty()) Name = "<Unknown>";
+        if (const auto Listed = Named("Resources", Resources) + Named("Virtual Resources", VirtualResources); !Listed.empty())
+            DependenciesText = DependenciesText == "No Dependencies" ? Listed : Listed + DependenciesText;
 
         // Starts small and grows to its content, always inside the window it is drawn in.
         // Owned by the resource (not by the item: an image has no id of its own), so the size measured for one resource is known the next time its card opens, wherever it is hovered.
