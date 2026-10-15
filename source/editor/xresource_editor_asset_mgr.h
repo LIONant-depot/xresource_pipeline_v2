@@ -1174,6 +1174,27 @@ namespace xresource_editor
         map_type_to_infodb                      m_InfoByTypeDataBase                = {};
         map_assetpath_to_asset                  m_AssetDataBase                     = {};
         std::unique_ptr<file_monitor_changes>   m_FileMonitorChanges                = {};
+
+        // How many resources list each virtual resource in their dependencies (m_VirtualResources): counted by the scan, moved each time a
+        // compile changes a resource's list (and when a removed virtual resource listed others). A virtual resource nothing lists any more is
+        // made by nothing: library_mgr::RemoveVirtualResource takes it away.
+        std::mutex                              m_VirtualRefsMutex;
+        std::unordered_map<std::uint64_t, int>  m_VirtualRefs;
+
+        // The list of one resource changed from Old to New: returns the virtual resources that nothing lists any more
+        std::vector<xresource::full_guid> UpdateVirtualRefs(std::span<const xresource::full_guid> Old, std::span<const xresource::full_guid> New) noexcept
+        {
+            std::lock_guard Lock(m_VirtualRefsMutex);
+            for (auto& G : New) ++m_VirtualRefs[G.m_Instance.m_Value];
+            std::vector<xresource::full_guid> Dropped;
+            for (auto& G : Old)
+                if (auto It = m_VirtualRefs.find(G.m_Instance.m_Value); It != m_VirtualRefs.end() && --It->second <= 0)
+                {
+                    m_VirtualRefs.erase(It);
+                    Dropped.push_back(G);
+                }
+            return Dropped;
+        }
     };
 
     //================================================================================================
@@ -1812,6 +1833,8 @@ namespace xresource_editor
                     InfoNode.m_bHasResource         = bResourceExists;
                     InfoNode.m_bHasDependencies     = bDependencyExists;
                     InfoNode.m_NewestDependencyTime = NewestDependencyTime;
+                    // The virtual resources it lists count (library_db::m_VirtualRefs). One a reload stops listing waits for the next scan
+                    (void)m_pLibraryDB->UpdateVirtualRefs(InfoNode.m_Dependencies.m_VirtualResources, Dependencies.m_VirtualResources);
                     InfoNode.m_Dependencies         = std::move(Dependencies);
                     InfoNode.m_State                = library_db::info_node::state::IDLE;
 
@@ -1843,7 +1866,9 @@ namespace xresource_editor
                     }
                     , [&](library_db::info_node& ParentInfoNode)
                     {
-                        ParentInfoNode.m_lChildLinks.push_back({ ChildGuid });
+                        // A resource loaded again (a virtual one, after each compile of its parent) is linked once
+                        if (std::ranges::find(ParentInfoNode.m_lChildLinks, xresource::full_guid{ ChildGuid }) == ParentInfoNode.m_lChildLinks.end())
+                            ParentInfoNode.m_lChildLinks.push_back({ ChildGuid });
                     });
                 });
             }
@@ -2171,6 +2196,75 @@ namespace xresource_editor
             }
 
             return Error;
+        }
+
+        //------------------------------------------------------------------------------------------------
+        // A virtual resource nothing lists any more (library_db::m_VirtualRefs: a material gone from a model, an import turned off): it leaves
+        // the library and the disk - its descriptor folder (Cache\Descriptors), its compiled data and its log - and the virtual resources it
+        // listed count one less (they go too when that was the last). Only a resource of the system descriptor folder goes: a user's
+        // resource is never deleted this way. Nesting: Entry(FindForDelete) -> per-RscLink Parent(W), EmptyTrashcan's own per-child order.
+        void RemoveVirtualResource(const library::guid LibraryGUID, const xresource::full_guid Guid) noexcept
+        {
+            std::wstring                      DescriptorFolder;
+            std::vector<xresource::full_guid> Dropped;
+            m_mLibraryDB.FindAsReadOnly(LibraryGUID, [&](const std::unique_ptr<library_db>& Library)
+            {
+                Library->m_InfoByTypeDataBase.FindAsReadOnly(Guid.m_Type, [&](const std::unique_ptr<library_db::info_db>& TypeDB)
+                {
+                    // Look first: FindForDelete would remove an entry this must keep
+                    bool bVirtual = false;
+                    TypeDB->m_InfoDataBase.FindAsReadOnly(Guid.m_Instance, [&](const library_db::info_node& Node)
+                    {
+                        bVirtual = std::wstring_view(Node.m_Path).starts_with(Library->m_Library.m_SysDescriptorPath);
+                    });
+                    if (!bVirtual) return;
+
+                    TypeDB->m_InfoDataBase.FindForDelete(Guid.m_Instance, [&](library_db::info_node& Node)
+                    {
+                        for (auto& Parent : Node.m_Info.m_RscLinks)
+                        {
+                            Library->m_InfoByTypeDataBase.FindAsReadOnly(Parent.m_Type, [&](const std::unique_ptr<library_db::info_db>& ParentDB)
+                            {
+                                ParentDB->m_InfoDataBase.FindAsWrite(Parent.m_Instance, [&](library_db::info_node& ParentNode)
+                                {
+                                    std::erase(ParentNode.m_lChildLinks, Guid);
+                                });
+                            });
+                        }
+
+                        for (auto& E : Node.m_Dependencies.m_Assets)
+                        {
+                            bool bUnused = false;
+                            Library->m_AssetDataBase.FindAsWrite(E, [&](library_db::asset& Asset)
+                            {
+                                std::erase(Asset.m_lChildLinks, Node.m_Info.m_Guid);
+                                bUnused = Asset.m_lChildLinks.empty();
+                            });
+                            if (bUnused) Library->m_AssetDataBase.FindForDelete(E, [](library_db::asset&) {});
+                        }
+
+                        DescriptorFolder = Node.m_Path.substr(0, Node.m_Path.find_last_of(L'\\'));
+                        Dropped          = Library->UpdateVirtualRefs(Node.m_Dependencies.m_VirtualResources, {});
+                        m_ModificationCounter++;
+                    });
+                });
+            });
+            if (DescriptorFolder.empty()) return;
+
+            std::string TypeName;
+            if (auto P = m_AssetPluginsDB.find(Guid.m_Type); P) TypeName = P->m_TypeName;
+            const auto  Value = Guid.m_Instance.m_Value;
+            const auto  Sub   = std::format(L"{}\\{:02X}\\{:02X}\\{:X}", xstrtool::To(TypeName), Value & 0xFF, (Value >> 8) & 0xFF, Value);
+
+            std::error_code Ec;
+            std::filesystem::remove_all(DescriptorFolder, Ec);
+            if (!TypeName.empty())
+            {
+                std::filesystem::remove_all(std::format(L"{}\\Cache\\Resources\\Platforms\\WINDOWS\\{}", m_ProjectPath, Sub), Ec);
+                std::filesystem::remove_all(std::format(L"{}\\Cache\\Resources\\Logs\\{}.log", m_ProjectPath, Sub), Ec);
+            }
+
+            for (auto& G : Dropped) RemoveVirtualResource(LibraryGUID, G);
         }
 
         //------------------------------------------------------------------------------------------------
@@ -3640,6 +3734,7 @@ namespace xresource_editor
             // Dependencies resolved - now bootstrap THIS library's own asset scan + file watcher
             // (the heavy, previously-single-library-only work OpenProject used to do inline).
             std::printf("[MultiLib] before process_info_job for guid=%llX\n", (unsigned long long)OutGuid.m_Instance.m_Value); std::fflush(stdout);
+            std::vector<xresource::full_guid> OrphanVirtualResources;        // the scan's virtual resources that no resource lists (removed below)
             m_mLibraryDB.FindAsWrite(OutGuid, [&](std::unique_ptr<library_db>& DB)
             {
                 DB->m_pProcessInfoJob = std::make_unique<process_info_job>();
@@ -3669,10 +3764,23 @@ namespace xresource_editor
                     }
                 }
 
+                // A virtual resource (in the system descriptor folder) is there because a compile of another resource made it and lists it
+                // in its dependencies (library_db::m_VirtualRefs counts them as the scan loads each resource): one that no resource lists is
+                // left over (a model's material removed, an import turned off, while no editor ran) and goes. While the editor runs, the count
+                // moves with each compile that changes a list (CompilingThreadWorker).
+                {
+                    for (auto& TypeEntry : DB->m_InfoByTypeDataBase)
+                        for (auto& NodeEntry : TypeEntry.second->m_InfoDataBase)
+                            if (std::wstring_view(NodeEntry.second.m_Path).starts_with(DB->m_Library.m_SysDescriptorPath) && !DB->m_VirtualRefs.contains(NodeEntry.second.m_Info.m_Guid.m_Instance.m_Value))
+                                OrphanVirtualResources.push_back(NodeEntry.second.m_Info.m_Guid);
+                }
+
                 DB->m_FileMonitorChanges = std::make_unique<file_monitor_changes>(m_AssetPluginsDB, *DB);
                 DB->m_ResidencyState     = library_db::residency_state::Active;
             });
             std::printf("[MultiLib] after process_info_job for guid=%llX\n", (unsigned long long)OutGuid.m_Instance.m_Value); std::fflush(stdout);
+            for (auto& G : OrphanVirtualResources) RemoveVirtualResource(OutGuid, G);
+            if (!OrphanVirtualResources.empty()) { std::printf("[MultiLib] removed %d virtual resources no resource lists\n", static_cast<int>(OrphanVirtualResources.size())); std::fflush(stdout); }
 
             // Root/trash folder bootstrap - per-LIBRARY now (every library gets its own, keyed by
             // its own GUID), not just once for the whole project like the old size()==1 proxy check
@@ -4236,6 +4344,7 @@ namespace xresource_editor
                     std::wstring          m_RelativePath;
                 };
                 std::vector<virtual_cascade_entry> VirtualCascadeList;
+                std::vector<xresource::full_guid>  VirtualOrphanList;      // the virtual resources nothing lists any more (same reason)
 
                 if (LibMgr.m_mLibraryDB.FindAsReadOnly( NewEntry.m_Entry.m_gLibrary, [&]( const std::unique_ptr<library_db>& LibraryDB )
                 {
@@ -4368,6 +4477,10 @@ namespace xresource_editor
 
                                         //TODO: We should check more types of dependencies...
 
+                                        // The virtual resources nothing lists any more after this compile (removed below, outside these callbacks)
+                                        for (auto& G : LibraryDB->UpdateVirtualRefs(Node.m_Dependencies.m_VirtualResources, Dependencies.m_VirtualResources))
+                                            VirtualOrphanList.push_back(G);
+
                                         // Set the new dependencies
                                         Node.m_Dependencies = std::move(Dependencies);
                                     }
@@ -4430,6 +4543,8 @@ namespace xresource_editor
                 // m_mLibraryDB/m_InfoByTypeDataBase, it's safe to actually register+enqueue whatever
                 // virtual resources were collected above - see VirtualCascadeList's own comment for why
                 // this can't happen any earlier.
+                for (auto& G : VirtualOrphanList) LibMgr.RemoveVirtualResource(NewEntry.m_Entry.m_gLibrary, G);
+
                 for (auto& E : VirtualCascadeList)
                 {
                     LibMgr.m_mLibraryDB.FindAsReadOnly(NewEntry.m_Entry.m_gLibrary, [&](const std::unique_ptr<library_db>& LibraryDB)
