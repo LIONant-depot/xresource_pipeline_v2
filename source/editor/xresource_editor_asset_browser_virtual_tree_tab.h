@@ -332,7 +332,14 @@ namespace xresource_editor
                 const int StrLen = static_cast<int>(std::strlen(draw_label));
                 ImVec2 FirstLineScreen = ImGui::GetCursorScreenPos();
 
-                if (StrLen > NCharsPerLine)
+                // The budget is in characters and the label is UTF-8 bytes (a Cyrillic letter is two): lines are counted and cut
+                // in whole characters, never inside one (cutting a letter in half drew it as a replacement glyph)
+                const auto IsContinuation = [&](int i) { return (static_cast<unsigned char>(draw_label[i]) & 0xC0) == 0x80; };
+                const auto Advance        = [&](int i, int nChars) { while (i < StrLen && nChars-- > 0) { ++i; while (i < StrLen && IsContinuation(i)) ++i; } return i; };
+                int NChars = 0;
+                for (int i = 0; i < StrLen; ++i) NChars += IsContinuation(i) ? 0 : 1;
+
+                if (NChars > NCharsPerLine)
                 {
                     // Word-aware wrap - break at the last space within budget so a name never
                     // splits mid-word (a plain fixed-character-count wrap did that, e.g.
@@ -343,7 +350,7 @@ namespace xresource_editor
                     int LineStart = 0;
                     for (int Line = 0; Line < MaxLines && LineStart < StrLen; ++Line)
                     {
-                        int End = LineStart + NCharsPerLine;
+                        int End = Advance(LineStart, NCharsPerLine);
                         if (End >= StrLen)
                         {
                             End = StrLen;
@@ -358,8 +365,10 @@ namespace xresource_editor
 
                         const bool bLastLine  = (Line == MaxLines - 1);
                         const bool bOverflows = bLastLine && End < StrLen;
-                        if (bOverflows && End > LineStart + 1)
-                            ImGui::Text("%.*s...", End - LineStart - 1, draw_label + LineStart);
+                        int        LastChar   = End - 1;     // where the line's last character starts: it makes room for the ellipsis
+                        while (LastChar > LineStart && IsContinuation(LastChar)) --LastChar;
+                        if (bOverflows && LastChar > LineStart)
+                            ImGui::Text("%.*s...", LastChar - LineStart, draw_label + LineStart);
                         else
                             ImGui::Text("%.*s", End - LineStart, draw_label + LineStart);
 
@@ -369,7 +378,7 @@ namespace xresource_editor
                 }
                 else
                 {
-                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + LetterWidth * ((NCharsPerLine - StrLen) / 2.0f+0.5f));
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + LetterWidth * ((NCharsPerLine - NChars) / 2.0f+0.5f));
                     FirstLineScreen = ImGui::GetCursorScreenPos();
                     ImGui::Text("%s", draw_label);
                 }
