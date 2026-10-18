@@ -389,12 +389,14 @@ namespace xresource_editor
             , SUCCESS
             , SUCCESS_WARNINGS
             , FAILURE
+            , CANCELLED         // the user stopped it (RequestCancel): the compiler and what it started were ended, the resource is not compiled
             };
 
             struct communication
             {
                 std::string     m_Log       = {};
                 result          m_Result    = {};
+                bool            m_bCancel   = false;    // asked to stop (RequestCancel): RunCommandLine ends the compiler's process tree
             };
 
             historical_entry()                                      = default;
@@ -801,12 +803,49 @@ namespace xresource_editor
 
         //------------------------------------------------------------------------------------------------
 
+        // Every compiler runs in a job object of its own (the compiler and every process it starts): ending the job ends the whole tree, and a job
+        // kills what is in it when its last handle closes, so no compiler outlives the editor, however the editor ends (KILL_ON_JOB_CLOSE)
+        struct running_jobs
+        {
+            std::mutex                  m_Mutex;
+            std::unordered_set<HANDLE>  m_Jobs;
+            bool                        m_bShutdown = false;    // CancelAll: what starts from now on is cancelled at once
+        };
+        inline running_jobs& RunningJobs() noexcept { static running_jobs Jobs; return Jobs; }
+
+        // The Cancel button: the compile of this log stops (a queued one as soon as it starts); its result becomes CANCELLED
+        inline void RequestCancel(historical_entry::log& Log) noexcept
+        {
+            xcontainer::lock::scope lock(Log);
+            Log.get().m_bCancel = true;
+        }
+
+        // The editor is closing: every running compiler is ended now, and any that would start is cancelled
+        inline void CancelAll() noexcept
+        {
+            auto& Jobs = RunningJobs();
+            std::scoped_lock lock(Jobs.m_Mutex);
+            Jobs.m_bShutdown = true;
+            for (HANDLE hJob : Jobs.m_Jobs) TerminateJobObject(hJob, 1);
+        }
+
         static void RunCommandLine
             ( const std::wstring&     WStrCommanLine
             , historical_entry::log&  CompilerFeedback
             , const bool              bOutputInConsole
             )
         {
+            {
+                xcontainer::lock::scope lock(CompilerFeedback);
+                std::scoped_lock        lockJobs(RunningJobs().m_Mutex);
+                if (CompilerFeedback.get().m_bCancel || RunningJobs().m_bShutdown)
+                {
+                    CompilerFeedback.get().m_Log    = "[CANCELLED] before the compiler started\n";
+                    CompilerFeedback.get().m_Result = historical_entry::result::CANCELLED;
+                    return;
+                }
+            }
+
             SECURITY_ATTRIBUTES saAttr;
             saAttr.nLength              = sizeof(SECURITY_ATTRIBUTES);
             saAttr.bInheritHandle       = TRUE;
@@ -842,21 +881,41 @@ namespace xresource_editor
             PROCESS_INFORMATION piProcInfo;
             ZeroMemory(&piProcInfo, sizeof(PROCESS_INFORMATION));
 
+            // The job of the compiler (see running_jobs). Without one (it could not be made) the compiler still runs, it just cannot be cancelled as a tree
+            HANDLE hJob = CreateJobObjectW(NULL, NULL);
+            if (hJob)
+            {
+                JOBOBJECT_EXTENDED_LIMIT_INFORMATION Limits = {};
+                Limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                SetInformationJobObject(hJob, JobObjectExtendedLimitInformation, &Limits, sizeof(Limits));
+            }
+
             if (!CreateProcess(
                 NULL,
                 const_cast<LPWSTR>(WStrCommanLine.c_str()), // Command line
                 NULL,           // Process handle not inheritable
                 NULL,           // Thread handle not inheritable
                 TRUE,           // Set handle inheritance to TRUE
-                DETACHED_PROCESS | BELOW_NORMAL_PRIORITY_CLASS,              // No creation flags
+                DETACHED_PROCESS | BELOW_NORMAL_PRIORITY_CLASS | CREATE_SUSPENDED,     // suspended until it is in its job: nothing it starts escapes the job
                 NULL,           // Use parent's environment block
                 NULL,           // Use parent's starting directory
                 &siStartInfo,   // Pointer to STARTUPINFO structure
                 &piProcInfo))   // Pointer to PROCESS_INFORMATION structure
             {
+                const DWORD Error = GetLastError();
                 ClosePipe();
-                throw std::runtime_error("CreateProcess failed");
+                if (hJob) CloseHandle(hJob);
+                throw std::runtime_error(std::format("CreateProcess failed (Windows error {})", Error));
             }
+            if (hJob && !AssignProcessToJobObject(hJob, piProcInfo.hProcess)) { CloseHandle(hJob); hJob = NULL; }
+            if (hJob)
+            {
+                std::scoped_lock lock(RunningJobs().m_Mutex);
+                RunningJobs().m_Jobs.insert(hJob);
+                if (RunningJobs().m_bShutdown) TerminateJobObject(hJob, 1);
+            }
+            ResumeThread(piProcInfo.hThread);
+            bool bCancelled = false;
 
             DWORD                   dwRead;
             std::array<CHAR, 16>    chBuf;
@@ -870,6 +929,24 @@ namespace xresource_editor
 
             while (true)
             {
+                // Cancel (the button, or the editor closing): the compiler's whole tree ends
+                {
+                    bool bCancel;
+                    {
+                        xcontainer::lock::scope lock(CompilerFeedback);
+                        bCancel = CompilerFeedback.get().m_bCancel;
+                    }
+                    if (!bCancel) { std::scoped_lock lock(RunningJobs().m_Mutex); bCancel = RunningJobs().m_bShutdown; }
+                    if (bCancel)
+                    {
+                        if (hJob) TerminateJobObject(hJob, 1);
+                        else      TerminateProcess(piProcInfo.hProcess, 1);
+                        WaitForSingleObject(piProcInfo.hProcess, 5000);
+                        bCancelled = true;
+                        break;
+                    }
+                }
+
                 dwRead = 0;
                 if (!PeekNamedPipe(hChildStd_OUT_Rd, NULL, 0, NULL, &dwRead, NULL))
                     break;
@@ -910,8 +987,24 @@ namespace xresource_editor
                 // continue otherwise
             }
 
+            // How the compiler ended (an exit code, or the NTSTATUS of a crash such as c00000fd): told with a failure, below; success is the success line alone
+            DWORD ExitCode = 0;
+            if (!bCancelled)
+            {
+                WaitForSingleObject(piProcInfo.hProcess, 10000);        // the loop also ends when the pipe breaks: the process is about to end
+                if (!GetExitCodeProcess(piProcInfo.hProcess, &ExitCode)) ExitCode = 0;
+            }
+
             CloseHandle(piProcInfo.hProcess);
             CloseHandle(piProcInfo.hThread);
+            if (hJob)
+            {
+                {
+                    std::scoped_lock lock(RunningJobs().m_Mutex);
+                    RunningJobs().m_Jobs.erase(hJob);
+                }
+                CloseHandle(hJob);      // what the compiler left running ends with it (KILL_ON_JOB_CLOSE)
+            }
 
             // Close the pipe when done
             CloseHandle(hChildStd_OUT_Wr);
@@ -923,7 +1016,12 @@ namespace xresource_editor
             {
                 xcontainer::lock::scope lock(CompilerFeedback);
 
-                if (xstrtool::findI(CompilerFeedback.get().m_Log, "[COMPILATION_SUCCESS]") != std::string::npos)
+                if (bCancelled)
+                {
+                    CompilerFeedback.get().m_Log   += "\n[CANCELLED] the compile was stopped: the compiler and what it started were ended\n";
+                    CompilerFeedback.get().m_Result = historical_entry::result::CANCELLED;
+                }
+                else if (xstrtool::findI(CompilerFeedback.get().m_Log, "[COMPILATION_SUCCESS]") != std::string::npos)
                 {
                     if (CompilerFeedback.get().m_Result == historical_entry::result::COMPILING_WARNINGS )
                     {
@@ -937,6 +1035,28 @@ namespace xresource_editor
                 }
                 else
                 {
+                    // No success line (that line alone says success): a failure. What the process ended with says why: its exit code, or the NTSTATUS of a crash
+                    const auto Name = [](DWORD Code) -> const char*
+                    {
+                        switch (Code)
+                        {
+                        case 0:             return "it ended normally without printing its success line";
+                        case STILL_ACTIVE:  return "still running after the output ended";
+                        case 0xC0000005:    return "crash: access violation";
+                        case 0xC00000FD:    return "crash: stack overflow";
+                        case 0xC0000409:    return "crash: stack buffer overrun / fail fast (abort, an unhandled C++ exception or a failed check)";
+                        case 0xC0000374:    return "crash: heap corruption";
+                        case 0xC0000094:    return "crash: integer divide by zero";
+                        case 0xC000001D:    return "crash: illegal instruction";
+                        case 0xC0000017:    return "crash: out of memory";
+                        case 0xC0000135:    return "a DLL it needs was not found";
+                        case 0xC000013A:    return "terminated (Ctrl+C)";
+                        case 0x80000003:    return "crash: breakpoint (an assert)";
+                        default:            return (Code & 0xC0000000) == 0xC0000000 ? "crash" : "the compiler reported an error";
+                        }
+                    };
+                    if (!CompilerFeedback.get().m_Log.empty() && CompilerFeedback.get().m_Log.back() != '\n') CompilerFeedback.get().m_Log += '\n';
+                    CompilerFeedback.get().m_Log   += std::format("[Error] The compile failed: the compiler exited with code 0x{:08X} ({})\n", ExitCode, Name(ExitCode));
                     CompilerFeedback.get().m_Result = historical_entry::result::FAILURE;
                 }
             }
@@ -4471,7 +4591,11 @@ namespace xresource_editor
                 }
                 catch (const std::exception& e)
                 {
+                    // The compiler could not be started (the pipe, CreateProcess): a failure of the compile, in its log and its problems
                     std::cerr << "Error: " << e.what() << "\n" << xstrtool::To(CommandLine) << std::endl;
+                    xcontainer::lock::scope lock(*NewEntry.m_Log);
+                    NewEntry.m_Log->get().m_Result = compilation::historical_entry::result::FAILURE;
+                    NewEntry.m_Log->get().m_Log   += std::format("\n[Error] The compiler could not be run: {})\n", e.what());
                 }
 
                 //
@@ -4493,7 +4617,7 @@ namespace xresource_editor
                 }
 
                 // A compile that uses a virtual resource of another owner fails (the dependencies are in the log of the resource)
-                if (Result != compilation::historical_entry::result::FAILURE)
+                if (Result != compilation::historical_entry::result::FAILURE && Result != compilation::historical_entry::result::CANCELLED)
                 {
                     constexpr std::wstring_view Root = L"Descriptors\\";
                     std::wstring_view           Sub  = DescriptorPath;
@@ -4560,14 +4684,16 @@ namespace xresource_editor
                     {
                         if ( InfoDB->m_InfoDataBase.FindAsWrite(NewEntry.m_Entry.m_FullGuid.m_Instance, [&](library_db::info_node& Node )
                         {
-                            if (static_cast<std::uint8_t>(Node.m_State) & 1) Node.m_State = Result == compilation::historical_entry::result::FAILURE ? library_db::info_node::state::BEEN_EDITED_ERRORS : library_db::info_node::state::BEEN_EDITED;
-                            else                                             Node.m_State = Result == compilation::historical_entry::result::FAILURE ? library_db::info_node::state::ERRORS : library_db::info_node::state::IDLE;
+                            // Cancelled: not compiled, as a failure is (it is not up to date), without being one in the list of failures
+                            const bool bNotCompiled = Result == compilation::historical_entry::result::FAILURE || Result == compilation::historical_entry::result::CANCELLED;
+                            if (static_cast<std::uint8_t>(Node.m_State) & 1) Node.m_State = bNotCompiled ? library_db::info_node::state::BEEN_EDITED_ERRORS : library_db::info_node::state::BEEN_EDITED;
+                            else                                             Node.m_State = bNotCompiled ? library_db::info_node::state::ERRORS : library_db::info_node::state::IDLE;
 
                             // Free: its virtual resources (and the next ones of the chain) queue from here on. A queue below puts the mark back.
                             LibraryDB->ReleaseBusy(Node.m_Info.m_Guid);
                             BusyGuard.m_bReleased = true;
 
-                            if (Result != compilation::historical_entry::result::FAILURE)
+                            if (!bNotCompiled)
                             {
                                 // Update the basic dates
                                 // Get the relative path of the resource from the descriptor ("Type\XX\YY\GUID.desc"): every descriptor, the

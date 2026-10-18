@@ -291,6 +291,12 @@ namespace xresource_editor
                     ImGui::Text("DONE COMPILING (But there were warnings)");
                     ImGui::PopStyleColor();
                 }
+                else if (Log.m_Result == compilation::historical_entry::result::CANCELLED)
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
+                    ImGui::Text("CANCELLED (not compiled)");
+                    ImGui::PopStyleColor();
+                }
                 else 
                 {
                     ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 0, 255));

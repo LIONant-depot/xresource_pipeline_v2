@@ -6,6 +6,7 @@ namespace xresource_pipeline::descriptor
     {
         virtual void SetupFromSource( std::string_view FileName ) = 0;
         virtual void Validate       ( std::vector<std::string>& Errors ) const noexcept = 0;
+        virtual void SetupNew       ( void ) noexcept {}        // a descriptor the user just made (not read): the defaults a new resource gets that one from before them, read without the field, must not
 
         virtual xerr Serialize( bool isReading, std::wstring_view FileName, xproperty::settings::context& Context ) noexcept
         {
