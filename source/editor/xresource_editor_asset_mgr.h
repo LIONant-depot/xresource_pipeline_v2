@@ -632,6 +632,11 @@ namespace xresource_editor
             std::atomic_bool                                m_PauseCompilation      = { false };
             std::atomic_bool                                m_isCompiling           = { false };
             std::atomic_int                                 m_WorkersWorking        = { 0 };
+            // While libraries load (OpenProject, EnsureLibraryLoaded: load_scope) no compilation starts: what the scan queues waits in m_Queue, and the
+            // compilation job is submitted when the last load ends. A job waiting for its own tasks runs other jobs meanwhile (xscheduler::task_group::join),
+            // so the scan's job would run compiles, and those wait for the library database the load holds (the startup deadlock)
+            std::atomic_int                                 m_LoadsInProgress       = { 0 };
+            std::atomic_bool                                m_bStartWhenLoaded      = { false };
             lock_queue                                      m_Queue                 = {};
             failed_container                                m_Failed                = {};
             compiling_list                                  m_Compiling             = {};
@@ -642,6 +647,16 @@ namespace xresource_editor
             instance(library_mgr& LibMgr ) : m_LibraryMgr{ LibMgr }
             {
             }
+
+            // A load of libraries (nested ones count once): the compilation asked for meanwhile starts when the last one ends
+            struct load_scope
+            {
+                explicit load_scope(instance& Instance) noexcept : m_Instance{ Instance } { ++m_Instance.m_LoadsInProgress; }
+                ~load_scope() { if (--m_Instance.m_LoadsInProgress == 0 && m_Instance.m_bStartWhenLoaded.exchange(false)) m_Instance.StartCompilation(); }
+                load_scope(const load_scope&) = delete;
+                load_scope& operator=(const load_scope&) = delete;
+                instance& m_Instance;
+            };
 
             void AllocateQueues( int Count )
             {
@@ -667,6 +682,13 @@ namespace xresource_editor
 
             void StartCompilation()
             {
+                // Libraries are loading (load_scope): started when the last load ends. Asked again after the flag is set, so a load that ended meanwhile is not missed
+                if (m_LoadsInProgress.load() > 0)
+                {
+                    m_bStartWhenLoaded.store(true);
+                    if (m_LoadsInProgress.load() > 0) return;
+                }
+
                 // Was "if (not m_isCompiling) { ...; m_isCompiling = true; ...; SubmitJob(...); }" -
                 // a plain check-then-set on an atomic<bool> is NOT atomic as a WHOLE: two callers can
                 // both observe m_isCompiling==false before either sets it, and both reach SubmitJob
@@ -3784,6 +3806,7 @@ namespace xresource_editor
         xerr EnsureLibraryLoaded(std::wstring LibraryPath, bool bExplicitRequest, bool bIsRootProject, library::guid& OutGuid) noexcept
         {
             std::printf("[MultiLib] ENTER EnsureLibraryLoaded path='%ls' root=%d\n", LibraryPath.c_str(), bIsRootProject ? 1 : 0); std::fflush(stdout);
+            const compilation::instance::load_scope Loading(m_Compilation);        // no compilation starts until the load ends
             library Library;
             {
                 xtextfile::stream Stream;
@@ -3883,15 +3906,22 @@ namespace xresource_editor
             // Dependencies resolved - now bootstrap THIS library's own asset scan + file watcher
             // (the heavy, previously-single-library-only work OpenProject used to do inline).
             std::printf("[MultiLib] before process_info_job for guid=%llX\n", (unsigned long long)OutGuid.m_Instance.m_Value); std::fflush(stdout);
+            // Submitted under the lock, waited for without it: whatever the scan's workers run meanwhile may need the library database (a job waiting for its
+            // own tasks runs other jobs, xscheduler::task_group::join)
+            process_info_job* pProcessInfoJob = nullptr;
             m_mLibraryDB.FindAsWrite(OutGuid, [&](std::unique_ptr<library_db>& DB)
             {
                 DB->m_pProcessInfoJob = std::make_unique<process_info_job>();
                 DB->m_pProcessInfoJob->setup(*this, *DB, {});
+                pProcessInfoJob = DB->m_pProcessInfoJob.get();
 
                 xscheduler::g_System.SubmitJob(*DB->m_pProcessInfoJob);
-                while (DB->m_pProcessInfoJob->m_State != process_info_job::state::DONE)
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            });
+            while (pProcessInfoJob->m_State != process_info_job::state::DONE)
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
+            m_mLibraryDB.FindAsWrite(OutGuid, [&](std::unique_ptr<library_db>& DB)
+            {
                 // Register every resource this library just scanned into the global "which library
                 // owns this resource" lookup (m_RscToLibraryMap) - needed by RemoveLibraryDependency's
                 // own removal-safety check (see the "Multi-library project model" plan section) to
@@ -4084,6 +4114,7 @@ namespace xresource_editor
             // Prepare compilation queues
             //
             m_Compilation.AllocateQueues(m_AssetPluginsDB.RecomputePluginGroups());
+            const compilation::instance::load_scope Loading(m_Compilation);        // nothing compiles until the project is open (the libraries, the plugins' types)
 
             //
             // Load the root library (this project itself) and, recursively, every library it
