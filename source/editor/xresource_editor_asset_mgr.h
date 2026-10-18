@@ -100,6 +100,51 @@ namespace xresource_editor
     }
 
     //------------------------------------------------------------------------------------------------
+    // Asset dependency paths (dependencies.txt, relative to the library). The KEY of an asset (m_AssetDataBase, the file monitor) is the path lowercased with
+    // backslashes: one key whatever case or slashes a compiler, a descriptor or the OS uses for the file. The PATH of an asset (asset::m_Path) is the file as it is
+    // on disk, with '/', because a case-sensitive filesystem (Linux) only finds a file by its own name: "assets\meadow.exr" is not "Assets/meadow.exr" there.
+    inline std::wstring AssetPathKey(std::wstring Path) noexcept
+    {
+        std::ranges::transform(Path, Path.begin(), [](wchar_t c) noexcept { return static_cast<wchar_t>(std::towlower(c)); });
+        std::ranges::replace(Path, L'/', L'\\');
+        return Path;
+    }
+
+    // The path of the file on disk for a dependency path, relative to the library, with '/'. The path as written when that file exists; else each part is looked
+    // up in its folder ignoring case: the fallback for dependencies.txt files written before the compilers kept the case (they hold the path lowercased with '\').
+    // A file that is not there at all comes back as given: the caller still sees it missing (and compiles the resource again, as it must).
+    inline std::wstring ResolveAssetPath(std::wstring_view LibraryPath, std::wstring RelPath) noexcept
+    {
+        std::ranges::replace(RelPath, L'\\', L'/');
+        std::error_code Ec;
+        if (std::filesystem::exists(std::filesystem::path(LibraryPath) / RelPath, Ec)) return RelPath;
+        if (std::filesystem::path(RelPath).is_absolute()) return RelPath;          // not a path in the library: nothing to look up
+
+        std::filesystem::path Folder = LibraryPath;
+        std::wstring          Resolved;
+        for (std::size_t Start = 0; Start <= RelPath.size(); )
+        {
+            const auto End  = std::min(RelPath.find(L'/', Start), RelPath.size());
+            std::wstring Part = RelPath.substr(Start, End - Start);
+            Start = End + 1;
+            if (Part.empty()) continue;
+            if (false == std::filesystem::exists(Folder / Part, Ec))
+            {
+                const auto Key = AssetPathKey(Part);
+                bool       bFound = false;
+                for (std::filesystem::directory_iterator It(Folder, Ec), Last; !Ec && It != Last; It.increment(Ec))
+                {
+                    if (auto Name = It->path().filename().wstring(); AssetPathKey(Name) == Key) { Part = std::move(Name); bFound = true; break; }
+                }
+                if (false == bFound) return RelPath;
+            }
+            Folder /= Part;
+            Resolved += (Resolved.empty() ? L"" : L"/") + Part;
+        }
+        return Resolved;
+    }
+
+    //------------------------------------------------------------------------------------------------
 
     inline std::chrono::zoned_time<std::chrono::milliseconds> ConvertToStdTime(std::filesystem::file_time_type FileTime)
 {
@@ -1936,10 +1981,10 @@ namespace xresource_editor
                     for ( auto& E : Dependencies.m_Assets )
                     {
                         auto& AssetPath = E;
-                        m_pLibraryDB->m_AssetDataBase.FindAsWriteOrCreate(AssetPath, [&](library_db::asset& Asset)
+                        m_pLibraryDB->m_AssetDataBase.FindAsWriteOrCreate(AssetPathKey(AssetPath), [&](library_db::asset& Asset)
                         {
-                            const auto FullPath = std::format(L"{}/{}", LibraryPath, AssetPath);
-                            Asset.m_Path            = AssetPath;
+                            Asset.m_Path            = ResolveAssetPath(LibraryPath, AssetPath);      // the file as it is on disk (AssetPathKey, ResolveAssetPath)
+                            const auto FullPath = std::format(L"{}/{}", LibraryPath, Asset.m_Path);
                             // A dependency that is not there (a cleared cache that kept this resource's output but not the log it depends on, a file that was deleted) used to throw
                             // here and end the editor at startup. It means the resource has to be compiled again: it is newer than the output by definition.
                             std::error_code DependencyEc;
@@ -2258,7 +2303,7 @@ namespace xresource_editor
                                         for (auto& E : ChildInfoNode.m_Dependencies.m_Assets)
                                         {
                                             bool bEraseTheEntireThing = false;
-                                            auto& WE = E;
+                                            const auto WE = AssetPathKey(E);
 
                                             Library->m_AssetDataBase.FindAsWrite( WE, [&](library_db::asset& Asset )
                                             {
@@ -2496,12 +2541,12 @@ namespace xresource_editor
                         for (auto& E : Node.m_Dependencies.m_Assets)
                         {
                             bool bUnused = false;
-                            Library->m_AssetDataBase.FindAsWrite(E, [&](library_db::asset& Asset)
+                            Library->m_AssetDataBase.FindAsWrite(AssetPathKey(E), [&](library_db::asset& Asset)
                             {
                                 std::erase(Asset.m_lChildLinks, Node.m_Info.m_Guid);
                                 bUnused = Asset.m_lChildLinks.empty();
                             });
-                            if (bUnused) Library->m_AssetDataBase.FindForDelete(E, [](library_db::asset&) {});
+                            if (bUnused) Library->m_AssetDataBase.FindForDelete(AssetPathKey(E), [](library_db::asset&) {});
                         }
 
                         DescriptorFolder = Node.m_Path.substr(0, Node.m_Path.find_last_of(L'\\'));
@@ -3372,16 +3417,13 @@ namespace xresource_editor
         // compiler-regenerated cache of it), confirmed by reading a real Descriptor.txt/dependencies.txt
         // pair side by side for this plan.
 
-        // Lowercase + backslash - the EXACT normalization the compiler already applies to every
-        // dependencies.txt entry before m_AssetDataBase is ever populated from it
-        // (xresource_pipeline_compiler_base.cpp, ~line 786) - any raw path used as an m_AssetDataBase
-        // key (from the UI, in whatever case/slash style the OS gives it) must go through the same
-        // transform or FindAsWrite/FindForDelete silently miss a real match.
+        // Lowercase + backslash - the m_AssetDataBase key (AssetPathKey, at the top of this file): every
+        // dependencies.txt entry is keyed through it when m_AssetDataBase is populated - any raw path used
+        // as an m_AssetDataBase key (from the UI, in whatever case/slash style the OS gives it) must go
+        // through the same transform or FindAsWrite/FindForDelete silently miss a real match.
         static std::wstring NormalizeAssetPath(std::wstring Path) noexcept
         {
-            std::ranges::transform(Path, Path.begin(), [](wchar_t c) noexcept { return static_cast<wchar_t>(std::towlower(c)); });
-            std::ranges::transform(Path, Path.begin(), [](wchar_t c) noexcept { return c == L'/' ? L'\\' : c; });
-            return Path;
+            return AssetPathKey(std::move(Path));
         }
 
         // Scoped text find-and-replace directly on one resource's Descriptor.txt - NOT a full
@@ -3566,7 +3608,7 @@ namespace xresource_editor
                             // from under it, that assumption breaks and it asserts. Keeping this list in
                             // sync closes the gap at its source instead.
                             for (auto& AssetPath : InfoNode.m_Dependencies.m_Assets)
-                                if (AssetPath == OldKey) AssetPath = NewKey;
+                                if (AssetPathKey(AssetPath) == OldKey) { AssetPath = NewRelPath; std::ranges::replace(AssetPath, L'\\', L'/'); }
 
                             // Mark dirty / requeue for compile - same pattern RecompileResource uses.
                             // Immediate, not deferred to a later Save() - the real file already moved,
@@ -4735,11 +4777,11 @@ namespace xresource_editor
                                         for (auto& E : Node.m_Dependencies.m_Assets)
                                         {
                                             // Do we still have this old dependency? If not we need to remove it!
-                                            if (auto it = std::find(Dependencies.m_Assets.begin(), Dependencies.m_Assets.end(), E); it == Dependencies.m_Assets.end())
+                                            if (std::ranges::none_of(Dependencies.m_Assets, [&](const std::wstring& N) { return AssetPathKey(N) == AssetPathKey(E); }))
                                             {
                                                 // We no longer has this dependency
                                                 bool bRemoveEntry = false;
-                                                if( false == LibraryDB->m_AssetDataBase.FindAsWrite( E, [&](library_db::asset& Asset)
+                                                if( false == LibraryDB->m_AssetDataBase.FindAsWrite( AssetPathKey(E), [&](library_db::asset& Asset)
                                                 {
                                                     // Remove our reference
                                                     for ( auto& G : Asset.m_lChildLinks )
@@ -4766,7 +4808,7 @@ namespace xresource_editor
                                                 if (bRemoveEntry)
                                                 {
                                                     //NOTE: There is a race condition here... From the moment we removed our entry someone else could have added a new one...
-                                                    LibraryDB->m_AssetDataBase.FindForDelete(E, [&](library_db::asset&){} );
+                                                    LibraryDB->m_AssetDataBase.FindForDelete(AssetPathKey(E), [&](library_db::asset&){} );
                                                 }
                                             }
                                             else
@@ -4780,13 +4822,13 @@ namespace xresource_editor
                                         for (auto& E : Dependencies.m_Assets)
                                         {
                                             // Is this a new dependency for us?
-                                            if (auto it = std::find(Node.m_Dependencies.m_Assets.begin(), Node.m_Dependencies.m_Assets.end(), E); it == Node.m_Dependencies.m_Assets.end())
+                                            if (std::ranges::none_of(Node.m_Dependencies.m_Assets, [&](const std::wstring& O) { return AssetPathKey(O) == AssetPathKey(E); }))
                                             {
                                                 LibraryDB->m_AssetDataBase.FindAsWriteOrCreate
-                                                ( E
+                                                ( AssetPathKey(E)
                                                 , [&](library_db::asset& Asset)
                                                 {
-                                                    Asset.m_Path          = E;
+                                                    Asset.m_Path          = ResolveAssetPath(LibraryDB->m_Library.m_Path, E);     // the file as it is on disk (AssetPathKey, ResolveAssetPath)
                                                     std::error_code DependencyEc;                                  // a compiler that listed a file that is not there must not end the editor
                                                     Asset.m_LastWriteTime = std::filesystem::last_write_time( std::format( L"{}//{}", LibraryDB->m_Library.m_Path, Asset.m_Path), DependencyEc );
                                                 }

@@ -781,11 +781,12 @@ xerr base::Compile( void ) noexcept
             //
             if ( false == m_Dependencies.m_Assets.empty() )
             {
+                // '/' and the case of the file kept (the paths come from file pickers, as the files are named): a case-sensitive filesystem (Linux) only
+                // opens a file by its own name. The editor compares the paths lowercased (xresource_editor_asset_mgr.h, AssetPathKey). They used to be
+                // written lowercased with '\', and on Linux every resource with an asset dependency was then found out of date at each start of the
+                // editor (its dependency "missing") and compiled again.
                 for (auto& S : m_Dependencies.m_Assets)
-                {
-                    std::ranges::transform(S, S.begin(), [](auto c) {return std::tolower(c); });
-                    std::ranges::transform(S, S.begin(), [](auto c) {return c == '/' ? '\\' : c; });
-                }
+                    std::ranges::replace(S, L'\\', L'/');
 
                 // Sort the vector to bring duplicates together
                 std::sort(m_Dependencies.m_Assets.begin(), m_Dependencies.m_Assets.end());

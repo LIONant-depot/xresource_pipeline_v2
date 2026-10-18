@@ -2568,11 +2568,12 @@ namespace xresource_editor
                                         {
                                             for( auto& E : InfoEntry.m_Dependencies.m_Assets)
                                             {
-                                                auto pos = E.rfind('\\') + 1;
+                                                auto pos = E.find_last_of(L"\\/") + 1;       // either slash: the compilers write '/'; older dependencies.txt files have '\'
                                                 if (ImGui::MenuItem(std::format( "###{}{}", (void*) & E, std::string_view(xstrtool::To(E).data() + pos, E.size() - pos).data()).c_str()))
                                                 {
                                                     //ShellExecute(NULL, L"open", L"explorer", xcore::string::To<wchar_t>(xcore::string::Fmt("%s\\Assets", strXstr(O.m_pLibraryMgr->m_ProjectPath).c_str())).data(), NULL, SW_SHOW);
                                                     auto Str = std::format(L"explorer /select,{}\\{}", m_AssetMgr.m_ProjectPath, E);
+                                                    std::ranges::replace(Str, L'/', L'\\');      // explorer takes backslashes only
                                                     system(xstrtool::To(Str).data());
                                                 }
                                             }
