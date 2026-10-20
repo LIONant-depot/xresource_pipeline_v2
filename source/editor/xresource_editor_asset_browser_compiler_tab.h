@@ -559,6 +559,7 @@ namespace xresource_editor
                         if (n->m_Guid.m_Instance.m_Value == Instance && n->m_Log) Found = n->m_Log.get();
             }
             if (!Found) return;
+            for (auto& KV : m_NodeUI) KV.second.m_bExpanded = false;        // the one the person came to see is the only one open
             auto& UI = m_NodeUI[Found];
             UI.m_bExpanded = true;
             UI.m_bTabChosen = false;            // it opens on the problems when it has some, on the output when it has not

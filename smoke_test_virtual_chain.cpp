@@ -40,6 +40,7 @@ int main()
     {
         virtual_chain C;
         Check(C.IsBlocked(Skeleton, false, Group), "unused: blocked");
+        Check(!C.IsBlocked(Skeleton, false, Group, true), "unused but asked for (the Compile button): not blocked");
         C.Update({}, std::array{ Skeleton, Package }, Skin);
         Check(!C.IsBlocked(Skeleton, false, Group), "listed and nothing busy: free");
         auto Dropped = C.Update(std::array{ Skeleton, Package }, {}, Skin);

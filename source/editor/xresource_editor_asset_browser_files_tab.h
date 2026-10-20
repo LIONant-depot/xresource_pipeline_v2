@@ -170,6 +170,31 @@ namespace xresource_editor
         }
         static void OpenFileWithDefaultApp(const std::filesystem::path& FullPath) noexcept { OpenFileWithApp(FullPath, false); }
 
+        // "Show in Explorer": the OS file manager on the file, selected (Windows), or on the folder. Where a file cannot be selected (the desktop's file manager on Linux) its folder is
+        // opened. Fire-and-forget, like opening a file; a failure is only logged. The path is passed whole and quoted: a name with spaces or commas stays one name.
+        static void ShowInExplorer(const std::filesystem::path& FullPath, bool bIsFolder) noexcept
+        {
+            std::filesystem::path Target = FullPath;
+            Target.make_preferred();
+        #if defined(_WIN32)
+            INT_PTR Result = 0;
+            if (bIsFolder) Result = reinterpret_cast<INT_PTR>(::ShellExecuteW(nullptr, L"open", Target.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+            else
+            {
+                const std::wstring Params = L"/select,\"" + Target.wstring() + L"\"";
+                Result = reinterpret_cast<INT_PTR>(::ShellExecuteW(nullptr, L"open", L"explorer.exe", Params.c_str(), nullptr, SW_SHOWNORMAL));
+            }
+        #else
+            const std::filesystem::path Folder = bIsFolder ? Target : Target.parent_path();
+            const auto Result = reinterpret_cast<INT_PTR>(::ShellExecuteW(nullptr, L"open", Folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+        #endif
+            if (Result <= 32)
+            {
+                std::printf("[AssetTree] Failed to show '%s' in the file manager (ShellExecuteW error %zd)\n", reinterpret_cast<const char*>(FullPath.u8string().c_str()), static_cast<std::ptrdiff_t>(Result));
+                std::fflush(stdout);
+            }
+        }
+
         // Lock-before-edit gating (Phase 4B) - runs m_Browser.m_OnBeforeOpenAssetFile (default-empty,
         // so every consumer that never wires source control in opens exactly as before) before
         // actually handing the file to the OS. A refusal doesn't just drop the open - it defers to
@@ -1265,6 +1290,8 @@ namespace xresource_editor
                     if (ImGui::MenuItem("Delete", xeditor::ShortcutText("Assets/Delete", "Del").c_str(), false, !bIsRoot))
                         DeleteSingleToTrash(LibraryGuid, RelPath);
                     ImGui::Separator();
+                    if (ImGui::MenuItem("Show in Explorer"))
+                        ShowInExplorer(FullPath, true);
                     // "SC Revert" - direct user request, same left-tree folder scope as Rename/Cut/
                     // Delete just above (gated !bIsRoot for the same reason those are). Deferred via
                     // the SAME shared pending-request state the RowContext popup uses below (real
@@ -2098,6 +2125,9 @@ namespace xresource_editor
                                         TryOpenFile(FullPath / E.m_Name, ToLibraryRelPath(m_SelectedFolder / E.m_Name), false);
                                     if (ImGui::MenuItem("Open With...", nullptr, false, bSingleFile))
                                         TryOpenFile(FullPath / E.m_Name, ToLibraryRelPath(m_SelectedFolder / E.m_Name), true);
+                                    // the file selected in the OS file manager (a folder row: the folder opened); one item, like Open
+                                    if (ImGui::MenuItem("Show in Explorer", nullptr, false, m_MultiSelected.size() == 1))
+                                        ShowInExplorer(FullPath / E.m_Name, E.m_bDirectory);
 
                                     // The resources that point at this file: find one in the resource browser, or open its editor. Only for a single file that has some.
                                     if (bSingleFile && E.m_DependentCount > 0) RenderResourceMenus(ToLibraryRelPath(m_SelectedFolder / E.m_Name));

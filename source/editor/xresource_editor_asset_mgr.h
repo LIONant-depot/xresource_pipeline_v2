@@ -41,6 +41,7 @@
 #include "xresource_editor_plugin_icon_atlas.h"
 #include "xresource_editor_virtual_chain.h"
 #include "xresource_editor_compile_orders.h"
+#include "xresource_editor_compile_schedule.h"
 
 namespace xresource_editor
 {
@@ -425,6 +426,8 @@ namespace xresource_editor
     }
 
     inline void CompilingThreadWorker(library_mgr& LibMgr, compilation::entry&& Entry);
+    namespace compilation { struct instance; }
+    inline bool PickReadyEntry(library_mgr& LibMgr, compilation::entry& Out, bool& bQueueEmpty) noexcept;
 
     namespace compilation
     {
@@ -520,6 +523,10 @@ namespace xresource_editor
                         && !m_Instance.m_PauseCompilation.load(std::memory_order_relaxed);
                 }
 
+                // The dispatcher. It stays until nothing is queued AND nothing runs, and looks at the queue all the time, so what is queued while others compile starts
+                // at once when there is a worker for it (it used to be seen only when the job ended, after every running compile). An entry waits only for what it
+                // really follows: the queued or running resources of the types its type runs after (plugin RunAfter, transitively) - not for every resource of a lower
+                // group, as the old level by level wait did.
                 void OnRun() noexcept override
                 {
                     xscheduler::task_group Compilation({ "COMPILATION" });
@@ -527,90 +534,43 @@ namespace xresource_editor
                     // I may need to wait a little bit so that lower priority jobs and fill themselves....
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-                    // Water level help us know until what level we can do jobs
-                    std::size_t WaterLevel = 0;
-                    std::as_const(m_Instance.m_Queue).lock();
                     const int nWorkers = xscheduler::g_System.getWorkerCount();
-                    entry Entry;
-                    do
+                    for (;;)
                     {
-                        // REAL BUG FOUND (2026-10): this walked the levels with a range-for over m_Queue.get() (iterators and a reference to
-                        // each queue) while the lock below is released twice per level. AllocateQueues (plugin registration on another thread)
-                        // grows that vector under the same lock the moment we let go, the vector reallocates, and the next Q.pop() read freed
-                        // memory (an access violation in queue::pop, seen on a worker thread). The levels are walked by INDEX now and the vector
-                        // is fetched again after every relock: it only ever grows, so an index stays valid.
-                        for (std::size_t iCurIndex = 0; iCurIndex < m_Instance.m_Queue.get().size(); ++iCurIndex)
+                        if (not ContinueCompiling()) return;
+
+                        // Let's not saturate the workers that way the editor can do other things... (a compile counts once: m_Dispatched is from the moment it is picked
+                        // until it ends, the real number of compiles; m_WorkersWorking only counts the ones a worker has started)
+                        if (m_Instance.m_Dispatched.load() < nWorkers)
                         {
-                            if (not ContinueCompiling())
+                            compilation::entry Entry;
+                            bool               bQueueEmpty = false;
+                            bool               bPicked     = false;
                             {
-                                std::as_const(m_Instance.m_Queue).unlock();
-                                return;
+                                xcontainer::lock::scope Lk(std::as_const(m_Instance.m_Queue));
+                                bPicked = PickReadyEntry(m_Instance.m_LibraryMgr, Entry, bQueueEmpty);
                             }
 
-                            // Let's not saturate the workers that way the editor can do other things...
-                            // REAL BUG FOUND LIVE (2026-09-11): this checked Compilation.getJobsInQueue()
-                            // - the count of jobs SUBMITTED BUT NOT YET PICKED UP by a worker - not how
-                            // many are actually EXECUTING right now. Once workers pick jobs up fast
-                            // enough, that count stays low even while dozens of compiles run truly
-                            // concurrently (m_WorkersWorking, the real concurrency counter, was observed
-                            // live reaching 44 on an 8-16 core machine during a big Recompile All) - the
-                            // throttle never engaged, every compiler subprocess fought the same CPU cores
-                            // at once, and a single expensive job (a cubemap GGX-roughness prefilter that
-                            // normally takes ~15s) took over 2 minutes as a result - it looked exactly
-                            // like a hang from the UI, but every process really was making progress, just
-                            // catastrophically slowly. Fixed by throttling on m_WorkersWorking itself.
-                            if (m_Instance.m_WorkersWorking.load() >= nWorkers)
+                            if (bPicked)
                             {
-                                std::as_const(m_Instance.m_Queue).unlock();
-                                xscheduler::g_System.WorkerStartWorking([&]()
-                                    {
-                                        return m_Instance.m_WorkersWorking.load() >= nWorkers;
-                                    });
-                                std::as_const(m_Instance.m_Queue).lock();
-                            }
-
-                            // Try to pull a new job
-                            if (m_Instance.m_Queue.get()[iCurIndex].pop(Entry))
-                            {
-                                ++m_Instance.m_WorkersWorking;
-                                Compilation.Submit([JobEntry = std::move(Entry), this]() mutable
+                                const auto Type = Entry.m_FullGuid.m_Type;
+                                ++m_Instance.m_Dispatched;
+                                m_Instance.TypeStarted(Type);
+                                Compilation.Submit([JobEntry = std::move(Entry), Type, this]() mutable
                                     {
                                         CompilingThreadWorker(m_Instance.m_LibraryMgr, std::move(JobEntry));
-                                        --m_Instance.m_WorkersWorking;
+                                        m_Instance.TypeEnded(Type);
+                                        --m_Instance.m_Dispatched;
                                     });
-
-                                break;
+                                continue;                                   // there may be more that can start now
                             }
 
-                            // Let us wait until all workers are done for this level.
-                            // REAL BUG FOUND LIVE (2026-09-11): this never re-checked ContinueCompiling()
-                            // while waiting, so a single slow (or, before the duplicate-queue-entry fix
-                            // in AddToCompilationQueueIfNeeded, hung) worker made Pause/Stop completely
-                            // unresponsive - the whole job just sat here until every in-flight worker
-                            // finished on its own, however long that took. This does NOT touch the
-                            // in-flight workers themselves (they keep running - see m_WorkersWorking,
-                            // decremented by their own lambda above); it only stops THIS job from
-                            // babysitting them further, so a paused/stopped state is reflected
-                            // immediately rather than after an unbounded wait.
-                            if (m_Instance.m_WorkersWorking)
-                            {
-                                std::as_const(m_Instance.m_Queue).unlock();
-                                do
-                                {
-                                    if (not ContinueCompiling())
-                                        return;
-                                    std::this_thread::yield();
-                                } while (m_Instance.m_WorkersWorking);
-                                std::as_const(m_Instance.m_Queue).lock();
-                            }
-
-                            // We have up our level
-                            WaterLevel = std::max(WaterLevel, iCurIndex);
+                            if (bQueueEmpty && m_Instance.m_Dispatched.load() == 0) return;     // nothing queued, nothing running
                         }
 
-                    } while (not m_Instance.m_Queue.get().empty() && WaterLevel < (m_Instance.m_Queue.get().size()-1));         // (no levels yet: size()-1 would wrap and this would spin)
-
-                    std::as_const(m_Instance.m_Queue).unlock();
+                        // Everything queued waits for what runs, or all the workers are busy: look again in a moment (a resource queued now is seen then)
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    }
                 }
 
                 void OnReset(void) noexcept override
@@ -684,7 +644,10 @@ namespace xresource_editor
             std::atomic_bool                                m_ManualCompilationTemp = { false };
             std::atomic_bool                                m_PauseCompilation      = { false };
             std::atomic_bool                                m_isCompiling           = { false };
-            std::atomic_int                                 m_WorkersWorking        = { 0 };
+            std::atomic_int                                 m_WorkersWorking        = { 0 };   // the compiles a worker has started (what the views show)
+            std::atomic_int                                 m_Dispatched            = { 0 };   // the compiles picked and not ended: what the dispatcher counts against the workers
+            std::mutex                                      m_RunningMutex;
+            std::unordered_map<xresource::type_guid, int>   m_RunningTypes;                    // how many compiles of each type are picked and not ended
             // While libraries load (OpenProject, EnsureLibraryLoaded: load_scope) no compilation starts: what the scan queues waits in m_Queue, and the
             // compilation job is submitted when the last load ends. A job waiting for its own tasks runs other jobs meanwhile (xscheduler::task_group::join),
             // so the scan's job would run compiles, and those wait for the library database the load holds (the startup deadlock)
@@ -713,12 +676,17 @@ namespace xresource_editor
             // A resource editor's Feedback asks the Compilation tab to show the compile of its resource (the instance guid; 0: nothing asked): the tab takes it
             std::atomic<std::uint64_t>              m_FocusInstance = { 0 };
 
+            // What the Compilation tab was last told about the errors of a descriptor (by instance guid): the same errors are said once, until a compile of it is queued
+            std::mutex                                          m_ValidationMutex;
+            std::unordered_map<std::uint64_t, std::string>      m_LastValidation;
+
             // The order the worker of this thread is running (0 on any other thread): a virtual resource queued while it runs - by the end of its owner's compile, or
             // of an earlier virtual resource of the chain - is part of its tree
             static std::uint64_t& CurrentOrder() noexcept { static thread_local std::uint64_t Order = 0; return Order; }
 
             std::uint64_t NewOrder(const xresource::full_guid& Guid, const library::guid& Library, bool bVirtual) noexcept
             {
+                { std::scoped_lock Lk(m_ValidationMutex); m_LastValidation.erase(Guid.m_Instance.m_Value); }        // a compile now: what the errors said is old
                 return m_Orders.New(Guid, Library, bVirtual ? CurrentOrder() : 0, [](historical_entry::log& Log, std::uint64_t Order)
                 {
                     xcontainer::lock::scope LogLock(Log);
@@ -740,6 +708,10 @@ namespace xresource_editor
                 load_scope& operator=(const load_scope&) = delete;
                 instance& m_Instance;
             };
+
+            void TypeStarted(xresource::type_guid Type) noexcept { std::scoped_lock Lk(m_RunningMutex); ++m_RunningTypes[Type]; }
+            void TypeEnded(xresource::type_guid Type) noexcept   { std::scoped_lock Lk(m_RunningMutex); if (--m_RunningTypes[Type] <= 0) m_RunningTypes.erase(Type); }
+            bool IsTypeRunning(xresource::type_guid Type) noexcept { std::scoped_lock Lk(m_RunningMutex); return m_RunningTypes.contains(Type); }
 
             void AllocateQueues( int Count )
             {
@@ -1281,7 +1253,8 @@ namespace xresource_editor
         std::filesystem::file_time_type CompilerTime(xresource::type_guid Type) const;
 
         // bForce: queue it even when its timestamps say it is up to date (RecompileAllResources) - the rest of the rules (no compiler, already queued) still apply.
-        bool AddToCompilationQueueIfNeeded( const info_db& InfoTypeDB, info_node& InfoNode, bool bForce = false) const
+        // bAllowUnused: a virtual resource nothing lists is queued too (the Compile button of its editor: see virtual_chain::IsBlocked)
+        bool AddToCompilationQueueIfNeeded( const info_db& InfoTypeDB, info_node& InfoNode, bool bForce = false, bool bAllowUnused = false) const
         {
             //NOTE: If a node is "deleted" should we let it compile???
 
@@ -1295,7 +1268,7 @@ namespace xresource_editor
             }
 
             // A virtual resource waits for its owner and for the ones before it in the chain, and is never compiled when unused (IsBlockedVirtual)
-            if (IsBlockedVirtual(InfoNode, bForce))
+            if (IsBlockedVirtual(InfoNode, bForce, bAllowUnused))
             {
                 return false;
             }
@@ -1450,9 +1423,9 @@ namespace xresource_editor
         void ReleaseBusy( const xresource::full_guid Guid ) noexcept { m_Chain.Released(Guid); }
 
         // A virtual resource that must not be queued now (see virtual_chain::IsBlocked)
-        bool IsBlockedVirtual( const info_node& Node, const bool bForce ) const noexcept
+        bool IsBlockedVirtual( const info_node& Node, const bool bForce, const bool bAllowUnused = false ) const noexcept
         {
-            return IsVirtual(Node) && m_Chain.IsBlocked(Node.m_Info.m_Guid, bForce, [&](xresource::type_guid Type) { return getQueueIndexFromType(Type); });
+            return IsVirtual(Node) && m_Chain.IsBlocked(Node.m_Info.m_Guid, bForce, [&](xresource::type_guid Type) { return getQueueIndexFromType(Type); }, bAllowUnused);
         }
 
         bool TakeForceWhenFree( const xresource::full_guid Guid ) const noexcept { return m_Chain.TakeForce(Guid); }
@@ -3284,6 +3257,32 @@ namespace xresource_editor
 
         std::shared_ptr<compilation::historical_entry::log> FindOpenOrder(const xresource::full_guid& ResourceGUID) noexcept { return m_Compilation.FindOpenOrder(ResourceGUID); }
 
+        // The descriptor has errors, so nothing is compiled: the Compilation tab shows why, as it shows everything that went wrong with a resource - a failed order that began and
+        // ended now, with the errors as its problems. The same errors are recorded once (asking again, as every click of a Feedback button does, adds nothing).
+        void RecordValidationFailure(const library::guid Library, const xresource::full_guid& Guid, const std::vector<std::string>& Errors)
+        {
+            if (Errors.empty()) return;
+            std::string Text = "[Info] The descriptor has errors: nothing was compiled\n";
+            for (const auto& E : Errors) Text += "[Error] " + E + "\n";
+            {
+                std::scoped_lock Lk(m_Compilation.m_ValidationMutex);
+                if (const auto It = m_Compilation.m_LastValidation.find(Guid.m_Instance.m_Value); It != m_Compilation.m_LastValidation.end() && It->second == Text) return;
+            }
+            const auto Order = m_Compilation.NewOrder(Guid, Library, false);
+            auto       Log   = m_Compilation.FindOrder(Order);
+            if (!Log) return;
+            {
+                const auto Now = std::chrono::steady_clock::now();
+                xcontainer::lock::scope Lk(*Log);
+                Log->get().m_Result = compilation::historical_entry::result::FAILURE;
+                Log->get().m_Log    = Text;
+                Log->get().m_Begin  = Log->get().m_End = Now;
+            }
+            { std::scoped_lock Lk(m_Compilation.m_ValidationMutex); m_Compilation.m_LastValidation[Guid.m_Instance.m_Value] = Text; }
+            m_OnCompilationState.NotifyAll(*this, Library, Guid, Log);
+            FinishOrder(Order, compilation::order_outcome::failed);
+        }
+
         // Asks the Compilation tab to open the compile of this resource (its instance guid) when it is shown
         void FocusCompilation(const std::uint64_t Instance) noexcept { m_Compilation.m_FocusInstance.store(Instance); }
 
@@ -3296,7 +3295,7 @@ namespace xresource_editor
                 {
                     InfoDB->m_InfoDataBase.FindAsWrite(ResourceGUID.m_Instance, [&](library_db::info_node& InfoNode)
                     {
-                        Library->AddToCompilationQueueIfNeeded(*InfoDB, InfoNode, true);
+                        Library->AddToCompilationQueueIfNeeded(*InfoDB, InfoNode, true, true);       // asked for by the person: also a generated resource that nothing lists now
                     });
                 });
             });
@@ -4595,6 +4594,39 @@ namespace xresource_editor
     //------------------------------------------------------------------------------------------------
     //------------------------------------------------------------------------------------------------
     //------------------------------------------------------------------------------------------------
+
+    //------------------------------------------------------------------------------------------------
+
+    // The types a type runs after: its plugin's RunAfter, and theirs (the resources of those are made before one of this type). A plugin the groups
+    // could not order (a cycle) waits for nothing here.
+    inline std::vector<xresource::type_guid> RunsAfterClosure(library_mgr& LibMgr, xresource::type_guid Type) noexcept
+    {
+        std::vector<xresource::type_guid>        Out;
+        std::vector<xresource::type_guid>        Stack{ Type };
+        std::unordered_set<xresource::type_guid> Seen{ Type };
+        while (!Stack.empty())
+        {
+            const auto T = Stack.back();
+            Stack.pop_back();
+            const auto* pPlugin = LibMgr.m_AssetPluginsDB.find(T);
+            if (pPlugin == nullptr || pPlugin->m_RunGroupIndex < 0) continue;
+            for (const auto& Before : pPlugin->m_RunAfter)
+                if (Seen.insert(Before).second) { Out.push_back(Before); Stack.push_back(Before); }
+        }
+        return Out;
+    }
+
+    // Takes the first queued compile that can start (see xresource_editor_compile_schedule.h). The caller holds the queue's lock.
+    inline bool PickReadyEntry(library_mgr& LibMgr, compilation::entry& Out, bool& bQueueEmpty) noexcept
+    {
+        auto& Instance = LibMgr.m_Compilation;
+        return compilation::PickReady
+        ( Instance.m_Queue.get(), Out, bQueueEmpty
+        , [](const compilation::entry& E) { return E.m_FullGuid.m_Type; }
+        , [&](xresource::type_guid Type) { return RunsAfterClosure(LibMgr, Type); }
+        , [&](xresource::type_guid Type) { return Instance.IsTypeRunning(Type); }
+        );
+    }
 
     inline void CompilingThreadWorker( library_mgr& LibMgr, compilation::entry&& Entry )
     {

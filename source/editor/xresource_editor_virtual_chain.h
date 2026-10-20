@@ -81,14 +81,15 @@ namespace xresource_editor
         void Released( const xresource::full_guid Guid ) const noexcept { std::lock_guard Lock(m_Mutex); m_Busy.erase (Guid.m_Instance.m_Value); }
 
         // A virtual resource that must not be queued now: unused, its owner is busy, or an earlier one of its owner is. bForce (Recompile All) is kept for
-        // when it is free again (TakeForce)
+        // when it is free again (TakeForce). bAllowUnused: the person asked for this one (the Compile button): an unused resource - which stays on disk with
+        // its edits, and may be one the person still uses - is compiled then (nothing lists it, so it has no owner to wait for)
         template<typename T_GROUP>
-        bool IsBlocked( const xresource::full_guid Guid, const bool bForce, T_GROUP&& Group ) const noexcept
+        bool IsBlocked( const xresource::full_guid Guid, const bool bForce, T_GROUP&& Group, const bool bAllowUnused = false ) const noexcept
         {
             std::lock_guard Lock(m_Mutex);
 
             const auto It = m_Refs.find(Guid.m_Instance.m_Value);
-            if (It == m_Refs.end()) return true;
+            if (It == m_Refs.end()) return !bAllowUnused;
 
             bool bWait = m_Busy.contains(It->second.m_Owner.m_Instance.m_Value);
             if (!bWait)
