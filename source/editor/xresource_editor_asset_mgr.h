@@ -40,6 +40,7 @@
 #include "xresource_editor_plugin_mgr.h"
 #include "xresource_editor_plugin_icon_atlas.h"
 #include "xresource_editor_virtual_chain.h"
+#include "xresource_editor_compile_orders.h"
 
 namespace xresource_editor
 {
@@ -419,6 +420,7 @@ namespace xresource_editor
             xresource::full_guid    m_FullGuid = {};
             library::guid           m_gLibrary = {};
             int                     m_Priority = {};
+            std::uint64_t           m_Order    = 0;     // the compilation order this entry is (see instance::NewOrder): how an editor asks for it to be cancelled
         };
     }
 
@@ -435,12 +437,16 @@ namespace xresource_editor
             , SUCCESS_WARNINGS
             , FAILURE
             , CANCELLED         // the user stopped it (RequestCancel): the compiler and what it started were ended, the resource is not compiled
+            , QUEUED            // the order exists and waits for a worker (last in the list: the values above are used as they are)
             };
 
             struct communication
             {
                 std::string     m_Log       = {};
                 result          m_Result    = {};
+                std::uint64_t   m_Order     = 0;        // the compilation order of this log: library_mgr::CancelCompile takes it
+                // when it was queued, when its compiler started and when it ended (zero: not yet): what the Compilation tab shows as times
+                std::chrono::steady_clock::time_point m_Queued = {}, m_Begin = {}, m_End = {};
                 bool            m_bCancel   = false;    // asked to stop (RequestCancel): RunCommandLine ends the compiler's process tree
             };
 
@@ -694,6 +700,36 @@ namespace xresource_editor
             instance(library_mgr& LibMgr ) : m_LibraryMgr{ LibMgr }
             {
             }
+
+            // The compilation orders: one from the moment a resource is queued until its compile ends (the log is the order's state: QUEUED, COMPILING, the result).
+            // The manager is the one that knows them, so an editor that was closed and opened again finds the order of its resource still there.
+            using orders = order_registry<historical_entry::log, library::guid>;
+            orders                                  m_Orders;
+            // The trees that are done (a copy of each, the newest last): what the Compilation tab shows after the order is over
+            std::mutex                              m_TreesMutex;
+            std::deque<orders::tree_done>           m_Trees;
+            static constexpr std::size_t            k_MaxTrees = 100;
+
+            // A resource editor's Feedback asks the Compilation tab to show the compile of its resource (the instance guid; 0: nothing asked): the tab takes it
+            std::atomic<std::uint64_t>              m_FocusInstance = { 0 };
+
+            // The order the worker of this thread is running (0 on any other thread): a virtual resource queued while it runs - by the end of its owner's compile, or
+            // of an earlier virtual resource of the chain - is part of its tree
+            static std::uint64_t& CurrentOrder() noexcept { static thread_local std::uint64_t Order = 0; return Order; }
+
+            std::uint64_t NewOrder(const xresource::full_guid& Guid, const library::guid& Library, bool bVirtual) noexcept
+            {
+                return m_Orders.New(Guid, Library, bVirtual ? CurrentOrder() : 0, [](historical_entry::log& Log, std::uint64_t Order)
+                {
+                    xcontainer::lock::scope LogLock(Log);
+                    Log.get().m_Result = historical_entry::result::QUEUED;
+                    Log.get().m_Order  = Order;
+                    Log.get().m_Queued = std::chrono::steady_clock::now();
+                });
+            }
+
+            std::shared_ptr<historical_entry::log> FindOrder(std::uint64_t Order) noexcept                  { return m_Orders.Find(Order); }
+            std::shared_ptr<historical_entry::log> FindOpenOrder(const xresource::full_guid& Guid) noexcept { return m_Orders.FindOpen(Guid); }
 
             // A load of libraries (nested ones count once): the compilation asked for meanwhile starts when the last one ends
             struct load_scope
@@ -1177,6 +1213,7 @@ namespace xresource_editor
             std::filesystem::file_time_type     m_ResourceTime      = NoFileTime();           // When was last time the descriptor got modified
             std::filesystem::file_time_type     m_NewestDependencyTime = NoFileTime();        // From all its dependencies which is the newest of them all...
             std::filesystem::file_time_type     m_CompileStarted    = NoFileTime();           // When the last compile of it began (see RetryFailedIfInputsChanged)
+            std::filesystem::file_time_type     m_CancelledAt       = NoFileTime();           // When a compile of it was cancelled before it started: what was saved before that is not queued again (a file event that comes late), what changes after is
             bool                                m_bHasDescriptor    = {};           // tells the system if it has a descriptor.txt
             bool                                m_bHasResource      = {};           // tells if the resource has been compiled or not
             bool                                m_bHasDependencies  = {};           // Tells if it has a dependency file
@@ -1197,6 +1234,7 @@ namespace xresource_editor
                 m_ResourceTime      = NoFileTime();
                 m_NewestDependencyTime = NoFileTime();
                 m_CompileStarted    = NoFileTime();
+                m_CancelledAt       = NoFileTime();
             }
         };
 
@@ -1263,6 +1301,13 @@ namespace xresource_editor
             }
             if (IsVirtual(InfoNode) && TakeForceWhenFree(InfoNode.m_Info.m_Guid)) bForce = true;
 
+            // Cancelled by the user before it started: the file events of what was saved before that (they arrive when they arrive) do not bring it back.
+            // Something that changed after the cancel does, and so does a forced compile (the Compile button, Recompile All).
+            if (!bForce && InfoNode.m_CancelledAt != NoFileTime() && InfoNode.m_DescriptorTime <= InfoNode.m_CancelledAt && InfoNode.m_NewestDependencyTime <= InfoNode.m_CancelledAt)
+            {
+                return false;
+            }
+
             // Already compiling, OR already sitting in the queue waiting to compile - never push a
             // second entry for the same resource. REAL BUG FOUND LIVE (2026-09-11): this used to only
             // exclude COMPILING/BEEN_EDITED_COMPILING, so calling this again while a resource was
@@ -1305,6 +1350,7 @@ namespace xresource_editor
             compilation::entry QueueEntry;
             QueueEntry.m_FullGuid = InfoNode.m_Info.m_Guid;
             QueueEntry.m_gLibrary = m_Library.m_GUID;
+            QueueEntry.m_Order    = m_CompilationInstance.NewOrder(InfoNode.m_Info.m_Guid, m_Library.m_GUID, IsVirtual(InfoNode));
             // A virtual resource runs in the group of its owner (right after it), not in the group of its own type
             QueueEntry.m_Priority = getQueueIndexFromType(IsVirtual(InfoNode) ? RootOwner(InfoNode.m_Info.m_Guid).m_Type : InfoNode.m_Info.m_Guid.m_Type);
             m_Chain.Queued(InfoNode.m_Info.m_Guid);
@@ -3224,11 +3270,121 @@ namespace xresource_editor
                         // Let us clear the descriptor time to force the issue...
                         InfoNode.m_DescriptorTime = NoFileTime();
                         InfoNode.m_ResourceTime   = NoFileTime();
+                        InfoNode.m_CancelledAt    = NoFileTime();
                         Library->AddToCompilationQueueIfNeeded(*InfoDB, InfoNode);
                     });
                 });
             });
         }
+
+        //------------------------------------------------------------------------------------------------
+        // The compilation orders. An editor that wants its resource compiled asks here and gets the log of the order (its m_Order is what
+        // CancelCompile takes); asking again while the resource has an order that is not over gives that same order. Null: nothing was queued
+        // (the type has no compiler, or a virtual resource that waits for its owner).
+
+        std::shared_ptr<compilation::historical_entry::log> FindOpenOrder(const xresource::full_guid& ResourceGUID) noexcept { return m_Compilation.FindOpenOrder(ResourceGUID); }
+
+        // Asks the Compilation tab to open the compile of this resource (its instance guid) when it is shown
+        void FocusCompilation(const std::uint64_t Instance) noexcept { m_Compilation.m_FocusInstance.store(Instance); }
+
+        std::shared_ptr<compilation::historical_entry::log> RequestCompile(const library::guid LibraryGUID, const xresource::full_guid& ResourceGUID)
+        {
+            if (auto Open = m_Compilation.FindOpenOrder(ResourceGUID)) return Open;
+            m_mLibraryDB.FindAsReadOnly(LibraryGUID, [&](const std::unique_ptr<library_db>& Library)
+            {
+                Library->m_InfoByTypeDataBase.FindAsReadOnly(ResourceGUID.m_Type, [&](const std::unique_ptr<library_db::info_db>& InfoDB)
+                {
+                    InfoDB->m_InfoDataBase.FindAsWrite(ResourceGUID.m_Instance, [&](library_db::info_node& InfoNode)
+                    {
+                        Library->AddToCompilationQueueIfNeeded(*InfoDB, InfoNode, true);
+                    });
+                });
+            });
+            return m_Compilation.FindOpenOrder(ResourceGUID);
+        }
+
+        // An order is over (its compile ended, or it was cancelled before it started). When it was the last of its tree the tree is done: said to whoever listens.
+        void FinishOrder(const std::uint64_t Order, const compilation::order_outcome Outcome) noexcept
+        {
+            if (auto Done = m_Compilation.m_Orders.End(Order, Outcome))
+            {
+                const auto Root = Done->m_Root;
+                const auto Guid = Done->m_Guid;
+                const auto Result = Done->m_Outcome;
+                {
+                    std::scoped_lock Lk(m_Compilation.m_TreesMutex);
+                    m_Compilation.m_Trees.push_back(std::move(*Done));
+                    if (m_Compilation.m_Trees.size() > compilation::instance::k_MaxTrees) m_Compilation.m_Trees.pop_front();
+                }
+                m_OnOrderDone.NotifyAll(*this, Root, Guid, Result);
+            }
+        }
+
+        // Is this the order of a resource that was queued by itself (not by the compile of another)? The one an editor holds.
+        bool IsRootOrder(const std::uint64_t Order) noexcept { return m_Compilation.m_Orders.IsRoot(Order); }
+
+        // Cancels an order. The order of a resource cancels its whole tree (what its compile made too, and what it would still queue); the order of
+        // something it made cancels just that. What waits in the queue leaves it and ends here; what runs (or is about to) has its compiler and everything
+        // the compiler started ended. False when the order is over (or never was).
+        bool CancelCompile(const std::uint64_t Order)
+        {
+            const auto Targets = m_Compilation.m_Orders.CancelTargets(Order);
+            for (const auto T : Targets) CancelOne(T);
+            return !Targets.empty();
+        }
+
+    private:
+        void CancelOne(const std::uint64_t Order)
+        {
+            auto Log = m_Compilation.FindOrder(Order);
+            if (!Log) return;
+
+            compilation::entry Removed;
+            bool               bWaiting = false;
+            {
+                xcontainer::lock::scope Lk(m_Compilation.m_Queue);
+                for (auto& Level : m_Compilation.m_Queue.get())
+                {
+                    auto It = std::ranges::find(Level.m_Deque, Order, &compilation::entry::m_Order);
+                    if (It == Level.m_Deque.end()) continue;
+                    Removed  = *It;
+                    Level.m_Deque.erase(It);
+                    bWaiting = true;
+                    break;
+                }
+            }
+
+            if (!bWaiting)
+            {
+                compilation::RequestCancel(*Log);       // a worker has it: it ends the compiler (or does not start it)
+                return;
+            }
+
+            {
+                xcontainer::lock::scope Lk(*Log);
+                Log->get().m_bCancel = true;
+                Log->get().m_Result  = compilation::historical_entry::result::CANCELLED;
+                Log->get().m_End     = std::chrono::steady_clock::now();
+                Log->get().m_Log     = "[CANCELLED] before the compiler started\n";
+            }
+            getNodeInfo(Removed.m_gLibrary, Removed.m_FullGuid, [&](library_db::info_node& Node)
+            {
+                Node.m_State = (static_cast<std::uint8_t>(Node.m_State) & 1) ? library_db::info_node::state::BEEN_EDITED_ERRORS : library_db::info_node::state::ERRORS;
+                Node.m_CancelledAt = std::filesystem::file_time_type::clock::now();
+            });
+            ReleaseBusy(Removed.m_gLibrary, Removed.m_FullGuid);
+            {
+                compilation::historical_entry Entry;
+                Entry.m_Entry = Removed;
+                Entry.m_Log   = Log;
+                std::scoped_lock Lk(m_Compilation.m_Historical.m_Mutex);
+                m_Compilation.m_Historical.m_List.emplace_back(std::move(Entry));
+            }
+            m_OnCompilationState.NotifyAll(*this, Removed.m_gLibrary, Removed.m_FullGuid, Log);
+            FinishOrder(Order, compilation::order_outcome::cancelled);
+        }
+
+    public:
 
         //------------------------------------------------------------------------------------------------
         // Force every resource, in every library, back into the compilation queue - same "clear the
@@ -4419,6 +4575,10 @@ namespace xresource_editor
         xdelegate::thread_safe<library_mgr&> m_OnCloseProjectEvent;
         xdelegate::thread_safe<library_mgr&, library::guid, xresource::full_guid, std::shared_ptr<compilation::historical_entry::log>&> m_OnCompilationState;
 
+        // A compilation order is over: the resource (the root of the order) and everything its compile made - the last order of the tree ended. Said once per order,
+        // with the worst outcome of the tree: this is when what the order made can be used (a font's atlas is compiled), the resource compiling alone is not.
+        xdelegate::thread_safe<library_mgr&, std::uint64_t, xresource::full_guid, compilation::order_outcome> m_OnOrderDone;
+
         //------------------------------------------------------------------------------------------------
 
         using map                = xcontainer::unordered_lockless_map<library::guid,        std::unique_ptr<library_db>>;
@@ -4460,7 +4620,28 @@ namespace xresource_editor
         std::wstring                    DescriptorPath;
         {
             NewEntry.m_Entry  = std::move(Entry);
-            NewEntry.m_Log    = std::make_shared<compilation::historical_entry::log>();
+            // The log was made with the order, when the resource was queued: an editor may already hold it (and may have asked for it to be cancelled)
+            NewEntry.m_Log    = Compilation.FindOrder(NewEntry.m_Entry.m_Order);
+            if (!NewEntry.m_Log) NewEntry.m_Log = std::make_shared<compilation::historical_entry::log>();
+            {
+                xcontainer::lock::scope Lk(*NewEntry.m_Log);
+                NewEntry.m_Log->get().m_Result = compilation::historical_entry::result::COMPILING;
+                NewEntry.m_Log->get().m_Order  = NewEntry.m_Entry.m_Order;
+                NewEntry.m_Log->get().m_Begin  = std::chrono::steady_clock::now();
+            }
+
+            // The order ends with this worker, after the last notification (a requeue made below has an order of its own). While this worker runs, the virtual
+            // resources it queues are in the tree of this order. A tree that was cancelled while this one waited does not start it.
+            struct order_guard_t
+            {
+                library_mgr&                    m_Mgr;
+                std::uint64_t                   m_Order;
+                std::uint64_t                   m_Previous = compilation::instance::CurrentOrder();
+                compilation::order_outcome      m_Outcome  = compilation::order_outcome::failed;      // the paths that leave before there is a result
+                order_guard_t(library_mgr& Mgr, std::uint64_t Order) noexcept : m_Mgr(Mgr), m_Order(Order) { compilation::instance::CurrentOrder() = Order; }
+                ~order_guard_t() noexcept { compilation::instance::CurrentOrder() = m_Previous; m_Mgr.FinishOrder(m_Order, m_Outcome); }
+            } OrderGuard{ LibMgr, NewEntry.m_Entry.m_Order };
+            if (Compilation.m_Orders.IsCancelled(NewEntry.m_Entry.m_Order)) compilation::RequestCancel(*NewEntry.m_Log);
 
             // The resource is marked busy (library_db::m_Busy) from the moment it is queued: the final state below frees it, this frees it on
             // the paths that leave before getting there
@@ -4479,6 +4660,7 @@ namespace xresource_editor
                 if ( static_cast<std::uint8_t>(Node.m_State)&1) Node.m_State = library_db::info_node::state::BEEN_EDITED_COMPILING;
                 else                                            Node.m_State = library_db::info_node::state::COMPILING;
                 Node.m_CompileStarted = std::filesystem::file_time_type::clock::now();
+                Node.m_CancelledAt    = NoFileTime();
 
                 // Set the actual string of the descriptor
                 auto Skip = LibMgr.m_ProjectPath.size() + 1;
@@ -4674,6 +4856,11 @@ namespace xresource_editor
                         NewEntry.m_Log->get().m_Log    = xstrtool::To(CommandLine) + "\n==============================\n" + NewEntry.m_Log->get().m_Log + "\n" + Message;
                     }
                 }
+
+                { xcontainer::lock::scope Lk(*NewEntry.m_Log); NewEntry.m_Log->get().m_End = std::chrono::steady_clock::now(); }
+                OrderGuard.m_Outcome = Result == compilation::historical_entry::result::FAILURE   ? compilation::order_outcome::failed
+                                     : Result == compilation::historical_entry::result::CANCELLED ? compilation::order_outcome::cancelled
+                                     :                                                              compilation::order_outcome::success;
 
                 // Added to the failure list if we failed
                 if (Result == compilation::historical_entry::result::FAILURE )

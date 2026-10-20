@@ -4,6 +4,8 @@
 #include "xresource_editor_asset_browser.h"
 #include "dependencies/xeditor/include/xeditor/hint.h"
 #include "xresource_editor_asset_mgr.h"
+#include "xresource_editor_compile_output.h"
+#include "xresource_editor_compile_view.h"
 #include "imgui.h"
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #   define IMGUI_DEFINE_MATH_OPERATORS // Allows ImVec2 arithmetic
@@ -118,6 +120,8 @@ namespace xresource_editor
 
     //=============================================================================
 
+    using namespace compile_ui;
+
     struct compiler_tab : xresource_editor::asset_browser_tab_base
     {
         xresource_editor::library_mgr& m_AssetMgr;
@@ -158,182 +162,437 @@ namespace xresource_editor
 
         //=============================================================================
 
-        void RenderEntry( compilation::historical_entry& E )
+        struct node_ui
         {
-            // Ensure unique IDs
-            const std::uint64_t UID = reinterpret_cast<std::size_t>(E.m_Entry.m_FullGuid.m_Instance.m_Pointer) + (E.m_Log ? reinterpret_cast<std::size_t>(E.m_Log.get()) : 0);
-            ImGui::PushID(reinterpret_cast<void*>(UID));
+            bool    m_bExpanded = false;
+            bool    m_bTabChosen = false;       // the tab that opens first (Problems when there are some) was chosen
+        };
+        std::unordered_map<const void*, node_ui> m_NodeUI;
 
-            bool& expanded = m_Expanded[UID];
+        // The name and kind of a resource, and its icon (the same lookups the asset views use)
+        struct node_label
+        {
+            std::string         m_Name;
+            std::string_view    m_Type;
+            ImTextureRef        m_Icon = {};
+            ImVec2              m_UV0 = {}, m_UV1 = {};
+            bool                m_bIcon = false;
+            bool                m_bUnknown = false;
+        };
 
-            static float AvariableWidth = ImGui::GetContentRegionAvail().x - 20;
-            /*
-            float itemHeight = expanded ? 45.0f * 2 : 45.0f * 1;
-            if (expanded)
-            {
-                if (E.m_Log)
-                {
-                    xcore::lock::scope lock(*E.m_Log);
-                    auto& Log = E.m_Log->get();
-                    // true = wrap
-                    ImVec2 textSize = CalcWrappedTextSize(Log.m_Log.c_str(), AvariableWidth);
-                    itemHeight = 45.0f + textSize.y + ImGui::GetStyle().FramePadding.y * 2;
-                }
-            }
-            */
+        // The height of a card: a bar under the row while it runs, and the two sections when it is open
+        static float CardHeight( bool bRunning, bool bExpanded ) noexcept { return (bRunning ? 66.0f : 48.0f) + (bExpanded ? 300.0f : 0.0f); }
 
-            ImGui::BeginChild("##child", ImVec2(0, expanded?275.0f:45.0f), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        // The name and kind of a resource do not change while it compiles: they are looked up once in a while, not every frame for every card
+        struct label_cache { node_label m_Label; double m_At = -1.0; };
+        std::unordered_map<std::uint64_t, label_cache> m_Labels;
 
-            ImGui::Selectable("##selectable", false, ImGuiSelectableFlags_AllowOverlap, ImVec2(0, 45.0f));
+        const node_label& Describe( const compilation::historical_entry& E )
+        {
+            auto& C = m_Labels[E.m_Entry.m_FullGuid.m_Instance.m_Value];
+            const double Now = ImGui::GetTime();
+            if (C.m_At < 0.0 || Now - C.m_At > 3.0) { C.m_Label = DescribeNow(E); C.m_At = Now; }
+            return C.m_Label;
+        }
 
-
-            // Draw content on top of the selectable
-            ImVec2 pos = ImGui::GetCursorScreenPos();
-            ImGui::SetCursorScreenPos(ImGui::GetItemRectMin());
-
-            if (ImGui::ArrowButton("##down", expanded? ImGuiDir_Down : ImGuiDir_Right))
-            {
-                expanded = !expanded;
-            }
-
-            ImGui::SameLine(20);
-
-            // Draw the main entry
-            std::string_view TypeName;
+        node_label DescribeNow( const compilation::historical_entry& E )
+        {
+            node_label L;
             m_AssetMgr.m_mLibraryDB.FindAsReadOnly(E.m_Entry.m_gLibrary, [&](const std::unique_ptr<library_db>& Library)
             {
                 Library->m_InfoByTypeDataBase.FindAsReadOnly(E.m_Entry.m_FullGuid.m_Type, [&](const std::unique_ptr<library_db::info_db>& InfoDB)
                 {
-                    std::string Icon;
-                    if (auto e = m_AssetMgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.find(E.m_Entry.m_FullGuid.m_Type); e == m_AssetMgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.end())
+                    if (auto e = m_AssetMgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.find(E.m_Entry.m_FullGuid.m_Type); e != m_AssetMgr.m_AssetPluginsDB.m_mPluginsByTypeGUID.end())
                     {
-                        // unable to find the type...
-                    }
-                    else
-                    {
-                        auto& Plugin = m_AssetMgr.m_AssetPluginsDB.m_lPlugins[e->second];
-                        TypeName    = Plugin.m_TypeName;
+                        L.m_Type = m_AssetMgr.m_AssetPluginsDB.m_lPlugins[e->second].m_TypeName;
                         if (auto Icon = m_AssetMgr.m_AssetPluginsDB.getIconRef(E.m_Entry.m_FullGuid.m_Type); Icon.isValid())
                         {
-                            ImGui::Image((ImTextureRef)(void*)Icon.m_pTexture, ImVec2(22, 22)
-                                        , ImVec2(Icon.m_U0, Icon.m_V0), ImVec2(Icon.m_U1, Icon.m_V1));
+                            L.m_Icon = (ImTextureRef)(void*)Icon.m_pTexture;
+                            L.m_UV0 = ImVec2(Icon.m_U0, Icon.m_V0);
+                            L.m_UV1 = ImVec2(Icon.m_U1, Icon.m_V1);
+                            L.m_bIcon = true;
                         }
-                        ImGui::SameLine();
                     }
-
-                    ImVec2 pos = ImGui::GetCursorScreenPos();
-                    // Fonts[3] - a real, larger BAKED font (see xgpu_imgui_breach.cpp's own comment on
-                    // it), not the old ScaleText(...,1.5f) hack, which just stretched Fonts[1]'s 12px
-                    // atlas glyphs at render time - readable, but visibly blurry/pixelated at that
-                    // scale. Direct user correction: "a larger size font... rather than resize a low
-                    // res one, so it looks more professional."
-                    if ( false == InfoDB->m_InfoDataBase.FindAsReadOnly(E.m_Entry.m_FullGuid.m_Instance, [&](const library_db::info_node& InfoNode)
+                    if (false == InfoDB->m_InfoDataBase.FindAsReadOnly(E.m_Entry.m_FullGuid.m_Instance, [&](const library_db::info_node& InfoNode)
                     {
-                        ImGui::PushFont(xgpu::tools::imgui::getLargeEmphasisFont());
-                        if (InfoNode.m_Info.m_Name.empty())
-                            ImGui::TextUnformatted(std::format("{:X}", E.m_Entry.m_FullGuid.m_Instance.m_Value).c_str());
-                        else
-                            ImGui::TextUnformatted(InfoNode.m_Info.m_Name.c_str());
-                        ImGui::PopFont();
+                        L.m_Name = InfoNode.m_Info.m_Name.empty() ? std::format("{:X}", E.m_Entry.m_FullGuid.m_Instance.m_Value) : InfoNode.m_Info.m_Name;
                     }))
                     {
-                        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
-                        ImGui::PushFont(xgpu::tools::imgui::getLargeEmphasisFont());
-                        ImGui::TextUnformatted(std::format("{:X} (Not in DBase)", E.m_Entry.m_FullGuid.m_Instance.m_Value).c_str());
-                        ImGui::PopFont();
-                        ImGui::PopStyleColor();
+                        L.m_Name = std::format("{:X} (not in the database)", E.m_Entry.m_FullGuid.m_Instance.m_Value);
+                        L.m_bUnknown = true;
                     }
-
-                    // Direct user correction: bring "Status:" closer to the name - was a fixed offset
-                    // tuned for the old, taller 1.5x-scaled text; the real 16px font sits lower
-                    // already. 18 (first attempt) overcorrected and sat too close/overlapping.
-                    pos.y += 22;
-                    ImGui::SetCursorScreenPos(pos);
                 });
             });
+            if (L.m_Name.empty()) L.m_Name = std::format("{:X}", E.m_Entry.m_FullGuid.m_Instance.m_Value);
+            return L;
+        }
 
-            ImGui::PushFont(xgpu::tools::imgui::getEmphasisFont());
-            ImGui::Text("Status:");
+        //=============================================================================
+
+        // The warnings and errors of a compile, one row each: its glyph, the message, and the lines that belong to it (muted). A right click copies it.
+        void RenderProblems( const compile_ui::log_view& V, const compilation::historical_entry& E )
+        {
+            const auto& P = *V.m_pParsed;
+            const bool bFailedWithoutWords = V.m_Result == compilation::historical_entry::result::FAILURE && P.m_nErrors == 0;
+            if (P.m_Problems.empty() && !bFailedWithoutWords)
+            {
+                const ImVec2 C = ImGui::GetCursorScreenPos();
+                auto* pList = ImGui::GetWindowDrawList();
+                pList->AddCircle(ImVec2(C.x + 10.0f, C.y + 10.0f), 6.5f, Fade(ColOk(), 200), 0, 1.5f);
+                pList->AddLine(ImVec2(C.x + 7.0f, C.y + 10.5f), ImVec2(C.x + 9.5f, C.y + 13.0f), Fade(ColOk(), 220), 1.5f);
+                pList->AddLine(ImVec2(C.x + 9.5f, C.y + 13.0f), ImVec2(C.x + 14.0f, C.y + 7.0f), Fade(ColOk(), 220), 1.5f);
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 26.0f);
+                ImGui::TextDisabled(V.m_bRunning ? "Nothing to report so far" : "No warnings or errors");
+                return;
+            }
+
+            auto Row = [&](bool bError, const std::string& Text)
+            {
+                const ImVec2 Start = ImGui::GetCursorScreenPos();
+                const float  Wrap  = ImGui::GetContentRegionAvail().x - 28.0f;
+                const auto   Nl    = Text.find('\n');
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 24.0f);
+                ImGui::BeginGroup();
+                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + Wrap);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(bError ? ColError() : ColWarn()));
+                ImGui::TextUnformatted(Text.c_str(), Nl == std::string::npos ? Text.c_str() + Text.size() : Text.c_str() + Nl);
+                ImGui::PopStyleColor();
+                if (Nl != std::string::npos)
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(ColMuted()));
+                    ImGui::TextUnformatted(Text.c_str() + Nl + 1);
+                    ImGui::PopStyleColor();
+                }
+                ImGui::PopTextWrapPos();
+                ImGui::EndGroup();
+                const ImVec2 End = ImGui::GetItemRectMax();
+                auto* pList = ImGui::GetWindowDrawList();
+                DrawGlyph(pList, ImVec2(Start.x + 9.0f, Start.y + ImGui::GetTextLineHeight() * 0.5f + 1.0f), bError);
+                pList->AddLine(ImVec2(Start.x, End.y + 3.0f), ImVec2(Start.x + ImGui::GetContentRegionAvail().x, End.y + 3.0f), IM_COL32(255, 255, 255, 14));
+                if (ImGui::IsMouseHoveringRect(Start, End) && ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) ImGui::SetClipboardText(Text.c_str());
+                if (ImGui::IsMouseHoveringRect(Start, End) && ImGui::IsWindowHovered()) xeditor::hint::Text("Right click copies this message");
+                ImGui::Dummy(ImVec2(0, 5.0f));
+            };
+
+            for (const auto& M : P.m_Problems) Row(M.m_Level == compilation::message_level::error, M.m_Text);
+            if (bFailedWithoutWords) Row(true, "The compile failed. The compiler gave no message of its own: the Output tab has all it printed.");
+        }
+
+        // The compiler's own words, line by line, with the problems coloured; it follows the end of the output while the compile runs
+        void RenderOutput( const compile_ui::log_view& V )
+        {
+            if (ImGui::SmallButton("Copy")) ImGui::SetClipboardText(V.m_Raw.c_str());
+            if (ImGui::IsItemHovered()) xeditor::hint::Text("Copy everything the compiler printed");
             ImGui::SameLine();
+            ImGui::TextDisabled("%zu bytes", V.m_Raw.size());
+
+            std::vector<std::string_view> Lines;
+            for (std::size_t Start = 0; Start <= V.m_Raw.size(); )
+            {
+                const auto Eol = V.m_Raw.find('\n', Start);
+                auto Line = std::string_view(V.m_Raw).substr(Start, Eol == std::string::npos ? V.m_Raw.size() - Start : Eol - Start);
+                while (!Line.empty() && Line.back() == '\r') Line.remove_suffix(1);
+                Lines.push_back(Line);
+                if (Eol == std::string::npos) break;
+                Start = Eol + 1;
+            }
+
+            ImGui::BeginChild("##raw", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+            const bool bAtEnd = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f;
+            ImGuiListClipper Clip;
+            Clip.Begin(static_cast<int>(Lines.size()), ImGui::GetTextLineHeight());
+            while (Clip.Step())
+                for (int i = Clip.DisplayStart; i < Clip.DisplayEnd; ++i)
+                {
+                    const auto Line = Lines[static_cast<std::size_t>(i)];
+                    compilation::message_level Level; std::string_view Text; float F; std::string Title;
+                    ImU32 Col = IM_COL32(205, 205, 205, 255);
+                    if (compilation::details::Tagged(Line, Level, Text))
+                        Col = Level == compilation::message_level::error ? ColError() : Level == compilation::message_level::warning ? ColWarn() : ColMuted();
+                    else if (compilation::details::Progress(Line, F, Title)) Col = ColMuted();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(Col));
+                    ImGui::TextUnformatted(Line.data(), Line.data() + Line.size());
+                    ImGui::PopStyleColor();
+                }
+            if (V.m_bRunning && bAtEnd) ImGui::SetScrollHereY(1.0f);
+            ImGui::EndChild();
+        }
+
+        //=============================================================================
+
+        // One resource of an order: a card with its name and kind, how it is going (a state, how long, its warnings and errors) and a bar; opened, it has two
+        // sections: the problems (what to read) and the output (what the compiler said). Returns the rectangle of the card.
+        void RenderNode( compilation::historical_entry& E, ImVec2& CardMin, std::uint64_t ShowOrder )
+        {
+            const void* Key = E.m_Log ? static_cast<const void*>(E.m_Log.get()) : static_cast<const void*>(&E);
+            auto& UI = m_NodeUI[Key];
+            const auto& Label = Describe(E);
+            const auto V      = compile_ui::ReadLog(E.m_Log, UI.m_bExpanded);
+            const char* pWord; ImU32 StateCol; bool bSpin;
+            StateOf(V.m_Result, pWord, StateCol, bSpin);
+            const auto& P = V.m_pParsed;
+            const int nErr  = P ? P->m_nErrors   : 0;
+            const int nWarn = P ? P->m_nWarnings : 0;
+            const bool bBar = V.m_bRunning;
+
+            if (Key == m_ScrollKey) { ImGui::SetScrollHereY(0.0f); m_ScrollKey = nullptr; }
+            ImGui::PushID(Key);
+            ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 6.0f);
+            ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(255, 255, 255, V.m_bRunning ? 46 : 22));
+            ImGui::BeginChild("##card", ImVec2(0, CardHeight(bBar, UI.m_bExpanded)), true, ImGuiWindowFlags_NoScrollWithMouse);      // (without NoScrollbar too: the wheel over a card goes on to the list)
+
+            // the row: open/close, the kind, the name ... the numbers
+            if (ImGui::ArrowButton("##open", UI.m_bExpanded ? ImGuiDir_Down : ImGuiDir_Right)) UI.m_bExpanded = !UI.m_bExpanded;
+            ImGui::SameLine();
+            if (Label.m_bIcon) { ImGui::Image(Label.m_Icon, ImVec2(22, 22), Label.m_UV0, Label.m_UV1); ImGui::SameLine(); }
+            ImGui::PushFont(xgpu::tools::imgui::getLargeEmphasisFont());
+            if (Label.m_bUnknown) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(ColError()));
+            ImGui::TextUnformatted(Label.m_Name.c_str());
+            if (Label.m_bUnknown) ImGui::PopStyleColor();
             ImGui::PopFont();
-            if ( E.m_Log )
-            {
-                xcontainer::lock::scope lock(*E.m_Log);
-                auto& Log = E.m_Log->get();
+            if (!Label.m_Type.empty()) { ImGui::SameLine(); ImGui::TextDisabled("%.*s", static_cast<int>(Label.m_Type.size()), Label.m_Type.data()); }
+            if (ShowOrder) { ImGui::SameLine(); ImGui::TextDisabled("order %llu", static_cast<unsigned long long>(ShowOrder)); }
 
-                if ( Log.m_Result == compilation::historical_entry::result::FAILURE)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
-                    ImGui::Text("ERRORS where found while compiling");
-                    ImGui::PopStyleColor();
-                }
-                else if (Log.m_Result == compilation::historical_entry::result::COMPILING )
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 0, 255));
-                    ImGui::Text("%s",std::format( "COMPILING: {} ", get_last_line(Log.m_Log)).c_str());
-                    ImGui::PopStyleColor();
-                }
-                else if (Log.m_Result == compilation::historical_entry::result::COMPILING_WARNINGS)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 0, 255));
-                    ImGui::Text("%s", std::format("COMPILING (Found Warnings!): {} ", get_last_line(Log.m_Log)).c_str());
-                    ImGui::PopStyleColor();
-                }
-                else if (Log.m_Result == compilation::historical_entry::result::SUCCESS)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
-                    ImGui::Text("DONE COMPILING");
-                    ImGui::PopStyleColor();
-                }
-                else if (Log.m_Result == compilation::historical_entry::result::SUCCESS_WARNINGS)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 0, 255));
-                    ImGui::Text("DONE COMPILING (But there were warnings)");
-                    ImGui::PopStyleColor();
-                }
-                else if (Log.m_Result == compilation::historical_entry::result::CANCELLED)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
-                    ImGui::Text("CANCELLED (not compiled)");
-                    ImGui::PopStyleColor();
-                }
-                else 
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 0, 255));
-                    ImGui::Text("UNKNOWN STATE!!");
-                    ImGui::PopStyleColor();
-                }
-            }
-            else
+            const std::string Time = V.m_Seconds < 0.0 ? std::string{} : V.m_bQueued ? "waiting " + FormatSeconds(V.m_Seconds) : FormatSeconds(V.m_Seconds);
+            const float ChipW   = ImGui::CalcTextSize(pWord).x + 16.0f + (bSpin ? 16.0f : 0.0f);
+            const float TimeW   = Time.empty() ? 0.0f : ImGui::CalcTextSize(Time.c_str()).x + 10.0f;
+            auto BadgeW = [](int N) { return N ? 18.0f + ImGui::CalcTextSize(std::format("{}", N).c_str()).x + 8.0f : 0.0f; };
+            const float RightW  = ChipW + TimeW + BadgeW(nErr) + BadgeW(nWarn) + 8.0f;
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - RightW - 10.0f));
+            auto Badge = [&](bool bError, int N)
             {
-                ImGui::TextUnformatted(std::format("Waiting to Compile with priority {}", E.m_Entry.m_Priority).c_str());
-            }
-            
+                if (!N) return;
+                const ImVec2 C = ImGui::GetCursorScreenPos();
+                DrawGlyph(ImGui::GetWindowDrawList(), ImVec2(C.x + 7.0f, C.y + ImGui::GetTextLineHeight() * 0.5f + 2.0f), bError);
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(bError ? ColError() : ColWarn()));
+                ImGui::Text("%d", N);
+                ImGui::PopStyleColor();
+                ImGui::SameLine(0.0f, 8.0f);
+            };
+            Badge(true, nErr);
+            Badge(false, nWarn);
+            Chip(pWord, StateCol, bSpin);
+            if (!Time.empty()) { ImGui::SameLine(0.0f, 10.0f); ImGui::TextDisabled("%s", Time.c_str()); }
 
-            // Optional: Add spacing or a separator
-            if (expanded) 
+            // the bar, with what the compiler is doing
+            if (bBar)
+            {
+                compile_ui::ProgressBar(V, ImVec2(-1.0f, 6.0f));
+                if (P && P->m_bProgress) ImGui::TextDisabled("%s  %d%%", P->m_ProgressTitle.empty() ? "Working" : P->m_ProgressTitle.c_str(), static_cast<int>(P->m_Progress * 100.0f + 0.5f));
+                else                     ImGui::TextDisabled("Working...");
+            }
+
+            // opened: the problems and the output
+            if (UI.m_bExpanded)
             {
                 ImGui::Separator();
-                ImGui::Indent();
-                ImGui::BeginChild("##childLog", ImVec2(0, 0), false);
-                if (E.m_Log)
+                if (ImGui::BeginTabBar("##sections"))
                 {
-                    xcontainer::lock::scope lock(*E.m_Log);
-                    auto& Log = E.m_Log->get();
-                    ImGui::PushTextWrapPos(AvariableWidth);
-                    ImGui::TextUnformatted(Log.m_Log.c_str());
-                    ImGui::PopTextWrapPos();
+                    const bool bSome = nErr + nWarn > 0 || (V.m_Result == compilation::historical_entry::result::FAILURE);
+                    ImGuiTabItemFlags FirstProblems = 0, FirstOutput = 0;
+                    if (!UI.m_bTabChosen) { (bSome ? FirstProblems : FirstOutput) = ImGuiTabItemFlags_SetSelected; UI.m_bTabChosen = true; }
 
-                    // Update for the future
-                    AvariableWidth = ImGui::GetContentRegionAvail().x;
+                    const std::string ProblemsTitle = nErr + nWarn ? std::format("Problems  {}", nErr + nWarn) : std::string("Problems");
+                    if (ImGui::BeginTabItem((ProblemsTitle + "###problems").c_str(), nullptr, FirstProblems))
+                    {
+                        ImGui::BeginChild("##problems", ImVec2(0, 0), false);
+                        RenderProblems(V, E);
+                        ImGui::EndChild();
+                        ImGui::EndTabItem();
+                    }
+                    if (ImGui::BeginTabItem("Output###output", nullptr, FirstOutput))
+                    {
+                        RenderOutput(V);
+                        ImGui::EndTabItem();
+                    }
+                    ImGui::EndTabBar();
                 }
-
-                ImGui::EndChild();
-                ImGui::Unindent();
             }
+
             ImGui::EndChild();
+            CardMin = ImGui::GetItemRectMin();
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar();
             ImGui::PopID();
-            
+        }
+
+        //=============================================================================
+
+        // One compilation order as a block: a header that says how far the whole order is (a bar over all of its resources, the problems of all of them), and
+        // under it the resource and what its compile made (a font's atlas, a geometry's materials), each a card, children indented and joined to their parent.
+        void RenderOrder( const std::vector<compilation::instance::orders::info>& Nodes, std::uint64_t Root, bool bOver, compilation::order_outcome Outcome )
+        {
+            using result = compilation::historical_entry::result;
+
+            // A block that is out of sight is a space of the same height: a build of hundreds of resources must not cost a frame
+            {
+                const ImVec2 Clip0 = ImGui::GetWindowDrawList()->GetClipRectMin(), Clip1 = ImGui::GetWindowDrawList()->GetClipRectMax();
+                const float  Top   = ImGui::GetCursorScreenPos().y;
+                const float  Gap   = ImGui::GetStyle().ItemSpacing.y;
+                float H = Nodes.size() > 1 ? m_HeaderHeight : 0.0f;       // (an order of one resource is its card alone)
+                for (const auto& N : Nodes)
+                {
+                    bool bRunning = false;
+                    if (N.m_Log) { xcontainer::lock::scope lock(*N.m_Log); const auto R = N.m_Log->get().m_Result; bRunning = R == result::COMPILING || R == result::COMPILING_WARNINGS; }
+                    const auto It = m_NodeUI.find(N.m_Log ? static_cast<const void*>(N.m_Log.get()) : nullptr);
+                    H += CardHeight(bRunning, It != m_NodeUI.end() && It->second.m_bExpanded) + Gap;
+                }
+                bool bFocus = false;
+                for (const auto& N : Nodes) bFocus |= N.m_Log && N.m_Log.get() == m_ScrollKey;
+                if (!bFocus && (Top + H < Clip0.y - 80.0f || Top > Clip1.y + 80.0f)) { ImGui::Dummy(ImVec2(0, H - Gap)); return; }
+            }
+            const float BlockTop = ImGui::GetCursorScreenPos().y;
+            const bool  bHeader  = Nodes.size() > 1;
+            ImGui::PushID(reinterpret_cast<void*>(static_cast<std::uintptr_t>(Root)));
+            if (bHeader)
+            {
+                int Done = 0, nErr = 0, nWarn = 0;
+                float Fraction = 0.0f;
+                std::string RootName;
+                double Seconds = -1.0;
+                for (const auto& N : Nodes)
+                {
+                    if (N.m_bEnded) ++Done;
+                    compilation::historical_entry E;
+                    E.m_Entry.m_FullGuid = N.m_Guid; E.m_Entry.m_gLibrary = N.m_Meta; E.m_Log = N.m_Log;
+                    const auto V = compile_ui::ReadLog(E.m_Log, false);
+                    if (V.m_pParsed) { nErr += V.m_pParsed->m_nErrors; nWarn += V.m_pParsed->m_nWarnings; }
+                    const bool bNodeDone = N.m_bEnded || V.m_Result == result::SUCCESS || V.m_Result == result::SUCCESS_WARNINGS || V.m_Result == result::FAILURE || V.m_Result == result::CANCELLED;
+                    Fraction += bNodeDone ? 1.0f : (V.m_bRunning && V.m_pParsed && V.m_pParsed->m_bProgress ? V.m_pParsed->m_Progress : 0.0f);
+                    if (N.m_Order == Root) { RootName = Describe(E).m_Name; }
+                    if (V.m_Seconds >= 0.0 && (V.m_bRunning || V.m_bQueued || N.m_Order == Root)) Seconds = std::max(Seconds, V.m_Seconds);
+                }
+                Fraction = Nodes.empty() ? 1.0f : Fraction / static_cast<float>(Nodes.size());
+
+                bool bAnyStarted = false;
+                for (const auto& N : Nodes)
+                {
+                    if (N.m_bEnded) { bAnyStarted = true; break; }
+                    if (N.m_Log) { xcontainer::lock::scope lock(*N.m_Log); if (N.m_Log->get().m_Result != result::QUEUED) { bAnyStarted = true; break; } }
+                }
+                const char* pWord = !bOver ? (bAnyStarted ? "Compiling" : "Queued") : Outcome == compilation::order_outcome::failed ? "Failed" : Outcome == compilation::order_outcome::cancelled ? "Cancelled" : (nWarn ? "Done with warnings" : "Done");
+                const ImU32 Col   = !bOver ? (bAnyStarted ? ColRun() : ColMuted()) : Outcome == compilation::order_outcome::failed ? ColError() : Outcome == compilation::order_outcome::cancelled ? ColMuted() : (nWarn ? ColWarn() : ColOk());
+
+                ImGui::Dummy(ImVec2(0, 4.0f));
+                ImGui::PushFont(xgpu::tools::imgui::getEmphasisFont());
+                ImGui::TextUnformatted(RootName.empty() ? std::format("Order {}", Root).c_str() : RootName.c_str());
+                ImGui::PopFont();
+                ImGui::SameLine();
+                ImGui::TextDisabled("order %llu  ·  %d of %zu done", static_cast<unsigned long long>(Root), Done, Nodes.size());
+                {
+                    auto BadgeW = [](int N) { return N ? 18.0f + ImGui::CalcTextSize(std::format("{}", N).c_str()).x + 8.0f : 0.0f; };
+                    const std::string Time = Seconds >= 0.0 ? FormatSeconds(Seconds) : std::string{};
+                    const float RightW = ImGui::CalcTextSize(pWord).x + 16.0f + (!bOver && bAnyStarted ? 16.0f : 0.0f) + (Time.empty() ? 0.0f : ImGui::CalcTextSize(Time.c_str()).x + 10.0f) + BadgeW(nErr) + BadgeW(nWarn) + 8.0f;
+                    ImGui::SameLine();
+                    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX() + 8.0f, ImGui::GetWindowWidth() - RightW - 10.0f));
+                    auto Badge = [&](bool bError, int N)
+                    {
+                        if (!N) return;
+                        const ImVec2 C = ImGui::GetCursorScreenPos();
+                        DrawGlyph(ImGui::GetWindowDrawList(), ImVec2(C.x + 7.0f, C.y + ImGui::GetTextLineHeight() * 0.5f + 2.0f), bError);
+                        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 18.0f);
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(bError ? ColError() : ColWarn()));
+                        ImGui::Text("%d", N);
+                        ImGui::PopStyleColor();
+                        ImGui::SameLine(0.0f, 8.0f);
+                    };
+                    Badge(true, nErr);
+                    Badge(false, nWarn);
+                    Chip(pWord, Col, !bOver && bAnyStarted);
+                    if (!Time.empty()) { ImGui::SameLine(0.0f, 10.0f); ImGui::TextDisabled("%s", Time.c_str()); }
+                }
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImGui::ColorConvertU32ToFloat4(bOver ? Fade(Col, 120) : Col));
+                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(1, 1, 1, 0.07f));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
+                ImGui::ProgressBar(bOver ? 1.0f : Fraction, ImVec2(-1.0f, bOver ? 2.5f : 4.0f), "");
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(2);
+                ImGui::Dummy(ImVec2(0, 2.0f));
+                m_HeaderHeight = ImGui::GetCursorScreenPos().y - BlockTop;          // what the header takes, as laid out: the spaces of the blocks out of sight use it
+            }
+
+            std::unordered_map<std::uint64_t, int> Depth;
+            for (const auto& N : Nodes)
+            {
+                const int D = N.m_Parent && Depth.contains(N.m_Parent) ? Depth[N.m_Parent] + 1 : 0;
+                Depth[N.m_Order] = D;
+
+                compilation::historical_entry E;
+                E.m_Entry.m_FullGuid = N.m_Guid;
+                E.m_Entry.m_gLibrary = N.m_Meta;
+                E.m_Entry.m_Order    = N.m_Order;
+                E.m_Log              = N.m_Log;
+
+                if (D) ImGui::Indent(24.0f * D);
+                ImVec2 CardMin;
+                RenderNode(E, CardMin, bHeader ? 0 : N.m_Order);
+                if (D)
+                {
+                    // the branch that joins a child to what made it
+                    auto* pList = ImGui::GetWindowDrawList();
+                    const float X = CardMin.x - 12.0f;
+                    pList->AddLine(ImVec2(X, CardMin.y - 8.0f), ImVec2(X, CardMin.y + 22.0f), IM_COL32(255, 255, 255, 40), 1.5f);
+                    pList->AddLine(ImVec2(X, CardMin.y + 22.0f), ImVec2(CardMin.x - 2.0f, CardMin.y + 22.0f), IM_COL32(255, 255, 255, 40), 1.5f);
+                    ImGui::Unindent(24.0f * D);
+                }
+            }
+            ImGui::PopID();
+        }
+
+        bool  m_bOnlyProblems = false;
+        const void* m_ScrollKey = nullptr;      // the card to bring into view (a resource editor's Feedback asked for it)
+
+        // A resource editor's Feedback: the compile of that resource (the newest one) is opened, and shown. The filter must not hide it.
+        void FocusNodeOf( std::uint64_t Instance )
+        {
+            const void* Found = nullptr;
+            const auto Open = m_AssetMgr.m_Compilation.m_Orders.Snapshot();
+            for (auto it = Open.rbegin(); it != Open.rend() && !Found; ++it)
+                if (it->m_Guid.m_Instance.m_Value == Instance && it->m_Log) Found = it->m_Log.get();
+            if (!Found)
+            {
+                std::lock_guard lock(m_AssetMgr.m_Compilation.m_TreesMutex);
+                for (auto t = m_AssetMgr.m_Compilation.m_Trees.rbegin(); t != m_AssetMgr.m_Compilation.m_Trees.rend() && !Found; ++t)
+                    for (auto n = t->m_Members.rbegin(); n != t->m_Members.rend() && !Found; ++n)
+                        if (n->m_Guid.m_Instance.m_Value == Instance && n->m_Log) Found = n->m_Log.get();
+            }
+            if (!Found) return;
+            auto& UI = m_NodeUI[Found];
+            UI.m_bExpanded = true;
+            UI.m_bTabChosen = false;            // it opens on the problems when it has some, on the output when it has not
+            m_ScrollKey = Found;
+            m_bOnlyProblems = false;
+        }
+        float m_HeaderHeight  = 48.0f;
+
+        // Did anything of this order have something to say (a warning, an error, or an order that did not succeed)?
+        bool HasProblems( const std::vector<compilation::instance::orders::info>& Nodes, compilation::order_outcome Outcome )
+        {
+            if (Outcome != compilation::order_outcome::success) return true;
+            for (const auto& N : Nodes)
+            {
+                compilation::historical_entry E;
+                E.m_Log = N.m_Log;
+                const auto V = compile_ui::ReadLog(E.m_Log, false);
+                if (V.m_pParsed && (V.m_pParsed->m_nErrors || V.m_pParsed->m_nWarnings)) return true;
+            }
+            return false;
+        }
+
+        // Groups the orders by the tree they are in: the nodes of each root, oldest first
+        using order_tree = std::pair<std::uint64_t, std::vector<compilation::instance::orders::info>>;
+        static std::vector<order_tree> GroupByRoot( const std::vector<compilation::instance::orders::info>& All )
+        {
+            std::vector<order_tree> Trees;
+            for (const auto& N : All)
+            {
+                auto It = std::ranges::find(Trees, N.m_Root, &order_tree::first);
+                if (It == Trees.end()) { Trees.push_back({ N.m_Root, {} }); It = Trees.end() - 1; }
+                It->second.push_back(N);
+            }
+            return Trees;
         }
 
         //=============================================================================
@@ -523,6 +782,24 @@ namespace xresource_editor
             }
 
             //
+            // What is shown: only the compiles that had something to say, and a way to forget the finished ones
+            //
+            {
+                ImGui::SameLine();
+                if (m_bOnlyProblems) ImGui::PushStyleColor(ImGuiCol_Button, normalColor);
+                if (ImGui::Button("Problems only")) m_bOnlyProblems = !m_bOnlyProblems;
+                if (m_bOnlyProblems) ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered()) xeditor::hint::Text("Show only the compiles that had warnings or errors");
+                ImGui::SameLine();
+                if (ImGui::Button("Clear"))
+                {
+                    std::lock_guard lock(m_AssetMgr.m_Compilation.m_TreesMutex);
+                    m_AssetMgr.m_Compilation.m_Trees.clear();
+                }
+                if (ImGui::IsItemHovered()) xeditor::hint::Text("Forget the compiles that are over");
+            }
+
+            //
             // Show the workers working
             //
             if (false)
@@ -538,60 +815,61 @@ namespace xresource_editor
             // Begin displaying items
             //
             ImGui::BeginChild("##items");
+            compile_ui::PruneParseCache();
+            if (const auto Asked = m_AssetMgr.m_Compilation.m_FocusInstance.exchange(0)) FocusNodeOf(Asked);
+            if (m_NodeUI.size() > 2048) m_NodeUI.clear();
 
             //
-            // First we want to print the entries been compile
+            // The orders that are not over, newest first: a block each, the whole tree of the resource
             //
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 255, 0, 255));
+            // what runs is what a person looks at: those first, then the ones that wait (each newest first)
+            auto Open = GroupByRoot(m_AssetMgr.m_Compilation.m_Orders.Snapshot());
+            auto Started = [](const order_tree& T)
             {
-                std::lock_guard lock(m_AssetMgr.m_Compilation.m_Compiling.m_Mutex);
-                for (auto& E : std::views::reverse(m_AssetMgr.m_Compilation.m_Compiling.m_List) )
+                for (const auto& N : T.second)
                 {
-                    RenderEntry(E);
+                    if (N.m_bEnded) return true;
+                    if (N.m_Log) { xcontainer::lock::scope lock(*N.m_Log); if (N.m_Log->get().m_Result != compilation::historical_entry::result::QUEUED) return true; }
+                }
+                return false;
+            };
+            {
+                const auto Mid = std::stable_partition(Open.begin(), Open.end(), Started);      // (oldest first inside each group)
+                std::reverse(Open.begin(), Mid);
+                std::reverse(Mid, Open.end());
+            }
+            for (auto& T : Open) RenderOrder(T.second, T.first, false, compilation::order_outcome::success);
+
+            //
+            // The orders that are over (the last ones), newest first
+            //
+            bool bAnyOver = false;
+            {
+                std::lock_guard lock(m_AssetMgr.m_Compilation.m_TreesMutex);
+                size_t Shown = 0;
+                for (auto it = m_AssetMgr.m_Compilation.m_Trees.rbegin(); it != m_AssetMgr.m_Compilation.m_Trees.rend() && Shown < 50; ++it)
+                {
+                    if (m_bOnlyProblems && !HasProblems(it->m_Members, it->m_Outcome)) continue;
+                    RenderOrder(it->m_Members, it->m_Root, true, it->m_Outcome);
+                    bAnyOver = true; ++Shown;
                 }
             }
-            ImGui::PopStyleColor();
 
-            //
-            // List of entries waiting for compilation
-            //
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+            // nothing to show: say so, calmly
+            if (Open.empty() && !bAnyOver)
             {
-                // Write lock so in case the workers are trying to compile don't fight with me
-                xcontainer::lock::scope Lk(m_AssetMgr.m_Compilation.m_Queue);
-                for (auto& QE : m_AssetMgr.m_Compilation.m_Queue.get())
-                {
-                    for ( auto&E : QE )
-                    {
-                        compilation::historical_entry I;
-                        I.m_Entry = E;
-                        RenderEntry(I);
-                    }
-                }
+                const ImVec2 Avail = ImGui::GetContentRegionAvail();
+                const char*  pText = m_bOnlyProblems ? "No compile with warnings or errors" : "Nothing has been compiled yet";
+                const ImVec2 Size  = ImGui::CalcTextSize(pText);
+                ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + (Avail.x - Size.x) * 0.5f, ImGui::GetCursorPosY() + std::max(20.0f, Avail.y * 0.35f)));
+                ImGui::TextDisabled("%s", pText);
             }
-            ImGui::PopStyleColor();
-
-            //
-            // Display some of the Historical entries
-            //
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-            {
-                std::lock_guard lock(m_AssetMgr.m_Compilation.m_Historical.m_Mutex);
-                size_t count = std::min<size_t>(50, m_AssetMgr.m_Compilation.m_Historical.m_List.size());
-
-                for (auto it = m_AssetMgr.m_Compilation.m_Historical.m_List.rbegin(); it != m_AssetMgr.m_Compilation.m_Historical.m_List.rbegin() + count; ++it)
-                {
-                    RenderEntry(*it);
-                }
-            }
-            ImGui::PopStyleColor();
 
             // sub window
             ImGui::EndChild();
             ImGui::PopStyleColor(); // matches the single ImGuiCol_Button push at the top of this function
         }
 
-        std::unordered_map<std::uint64_t, bool> m_Expanded;
     };
 
     //=============================================================================
