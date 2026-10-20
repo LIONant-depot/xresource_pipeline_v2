@@ -684,10 +684,19 @@ namespace xresource_editor
             // of an earlier virtual resource of the chain - is part of its tree
             static std::uint64_t& CurrentOrder() noexcept { static thread_local std::uint64_t Order = 0; return Order; }
 
-            std::uint64_t NewOrder(const xresource::full_guid& Guid, const library::guid& Library, bool bVirtual) noexcept
+            // A virtual (generated) resource is part of the run of its owner while that run is open - whoever queued it: the compile of the owner as it ends, or the file watcher
+            // a moment later when it sees the files the owner wrote. Otherwise it is part of the run of the worker that queues it, or of none.
+            std::uint64_t NewOrder(const xresource::full_guid& Guid, const library::guid& Library, bool bVirtual, const xresource::full_guid& Owner) noexcept
             {
                 { std::scoped_lock Lk(m_ValidationMutex); m_LastValidation.erase(Guid.m_Instance.m_Value); }        // a compile now: what the errors said is old
-                return m_Orders.New(Guid, Library, bVirtual ? CurrentOrder() : 0, [](historical_entry::log& Log, std::uint64_t Order)
+                std::uint64_t Parent = 0;
+                if (bVirtual)
+                {
+                    if (Owner != Guid)
+                        if (auto OwnerLog = m_Orders.FindOpen(Owner)) { xcontainer::lock::scope Lk(*OwnerLog); Parent = OwnerLog->get().m_Order; }
+                    if (!Parent) Parent = CurrentOrder();
+                }
+                return m_Orders.New(Guid, Library, Parent, [](historical_entry::log& Log, std::uint64_t Order)
                 {
                     xcontainer::lock::scope LogLock(Log);
                     Log.get().m_Result = historical_entry::result::QUEUED;
@@ -1323,7 +1332,7 @@ namespace xresource_editor
             compilation::entry QueueEntry;
             QueueEntry.m_FullGuid = InfoNode.m_Info.m_Guid;
             QueueEntry.m_gLibrary = m_Library.m_GUID;
-            QueueEntry.m_Order    = m_CompilationInstance.NewOrder(InfoNode.m_Info.m_Guid, m_Library.m_GUID, IsVirtual(InfoNode));
+            QueueEntry.m_Order    = m_CompilationInstance.NewOrder(InfoNode.m_Info.m_Guid, m_Library.m_GUID, IsVirtual(InfoNode), IsVirtual(InfoNode) ? RootOwner(InfoNode.m_Info.m_Guid) : InfoNode.m_Info.m_Guid);
             // A virtual resource runs in the group of its owner (right after it), not in the group of its own type
             QueueEntry.m_Priority = getQueueIndexFromType(IsVirtual(InfoNode) ? RootOwner(InfoNode.m_Info.m_Guid).m_Type : InfoNode.m_Info.m_Guid.m_Type);
             m_Chain.Queued(InfoNode.m_Info.m_Guid);
@@ -3268,7 +3277,7 @@ namespace xresource_editor
                 std::scoped_lock Lk(m_Compilation.m_ValidationMutex);
                 if (const auto It = m_Compilation.m_LastValidation.find(Guid.m_Instance.m_Value); It != m_Compilation.m_LastValidation.end() && It->second == Text) return;
             }
-            const auto Order = m_Compilation.NewOrder(Guid, Library, false);
+            const auto Order = m_Compilation.NewOrder(Guid, Library, false, Guid);
             auto       Log   = m_Compilation.FindOrder(Order);
             if (!Log) return;
             {
