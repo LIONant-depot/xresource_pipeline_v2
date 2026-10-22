@@ -718,6 +718,17 @@ namespace xresource_editor
                 instance& m_Instance;
             };
 
+            // The editor is closing: nothing new starts, and the dispatcher and the compiles it picked end before the libraries they write into go
+            // (they are destroyed after this; a worker still in TypeEnded or in a library's database then was the crash at exit). CancelAll first ends
+            // the compiler processes, so this waits for the threads that ran them only.
+            void StopAndWait(std::chrono::milliseconds MaxWait) noexcept
+            {
+                m_bRunning.store(false);
+                const auto End = std::chrono::steady_clock::now() + MaxWait;
+                while ((m_isCompiling.load() || m_Dispatched.load() > 0) && std::chrono::steady_clock::now() < End)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+
             void TypeStarted(xresource::type_guid Type) noexcept { std::scoped_lock Lk(m_RunningMutex); ++m_RunningTypes[Type]; }
             void TypeEnded(xresource::type_guid Type) noexcept   { std::scoped_lock Lk(m_RunningMutex); if (--m_RunningTypes[Type] <= 0) m_RunningTypes.erase(Type); }
             bool IsTypeRunning(xresource::type_guid Type) noexcept { std::scoped_lock Lk(m_RunningMutex); return m_RunningTypes.contains(Type); }
