@@ -23,6 +23,20 @@ namespace xresource_editor
 
         //=============================================================================
 
+        // "Show in Explorer": Explorer on Path, or (bSelect) on its folder with Path selected. On Linux the shim's ShellExecute takes this same call to the desktop's
+        // file manager (xlion_linux_gui.cpp). The path is quoted (a name with spaces or commas stays one name) and has no trailing separator (it would escape the quote).
+        static void ShowInExplorer(std::wstring Path, bool bSelect) noexcept
+        {
+        #if defined(_WIN32)
+            std::ranges::replace(Path, L'/', L'\\');      // explorer takes backslashes only
+        #endif
+            while (Path.size() > 1 && (Path.back() == L'\\' || Path.back() == L'/')) Path.pop_back();
+            const std::wstring Params = (bSelect ? L"/select,\"" : L"\"") + Path + L"\"";
+            ::ShellExecuteW(nullptr, L"open", L"explorer.exe", Params.c_str(), nullptr, SW_SHOWNORMAL);
+        }
+
+        //=============================================================================
+
         virtual_tree_tab(asset_browser& Browser, const char* pName)
             : asset_browser_tab_base{ Browser, pName }
             , m_AssetMgr{ *Browser.getAssetMgr() }
@@ -2487,14 +2501,12 @@ namespace xresource_editor
                     {
                         if (ImGui::MenuItem("  Final Resource (Root)"))
                         {
-                            auto Str = std::format(L"explorer {}\\Cache\\Resources\\Platforms\\WINDOWS\\", m_AssetMgr.m_ProjectPath);
-                            system(xstrtool::To(Str).data());
+                            ShowInExplorer(std::format(L"{}\\Cache\\Resources\\Platforms\\WINDOWS", m_AssetMgr.m_ProjectPath), false);
                         }
 
                         if (ImGui::MenuItem("  Assets (Root)"))
                         {
-                            auto Str = std::format(L"explorer {}\\Assets\\", m_AssetMgr.m_ProjectPath);
-                            system(xstrtool::To(Str).data());
+                            ShowInExplorer(std::format(L"{}\\Assets", m_AssetMgr.m_ProjectPath), false);
                         }
 
                         m_AssetMgr.m_mLibraryDB.FindAsReadOnly(m_SelectedLibrary, [&](const std::unique_ptr<xresource_editor::library_db>& Lib)
@@ -2519,8 +2531,7 @@ namespace xresource_editor
                                             Str.resize(pos + 11);
                                         }
 
-                                        Str = std::format(L"explorer {}", Str);
-                                        system(xstrtool::To(Str).data());
+                                        ShowInExplorer(Str, false);
                                     }
 
                                     if ( InfoEntry.m_bHasResource )
@@ -2541,14 +2552,10 @@ namespace xresource_editor
                                                 Str.replace(pos, 11, L"Cache\\Resources\\Platforms\\WINDOWS");
                                             }
 
-                                            pos = Str.rfind(L'\\');
-                                            Str.erase(pos - sizeof("desc"));
+                                            pos = Str.find_last_of(L"\\/");       // either separator: the path is spelled with '/' on Linux
+                                            if (pos != std::wstring::npos) Str.erase(pos - sizeof("desc"));
 
-                                            if (std::filesystem::exists(Str))
-                                            {
-                                                Str = std::format(L"explorer /select,{}", Str);
-                                                system(xstrtool::To(Str).data());
-                                            }
+                                            if (std::filesystem::exists(Str)) ShowInExplorer(Str, true);
                                         }
                                     }
 
@@ -2556,9 +2563,7 @@ namespace xresource_editor
                                     {
                                         if (ImGui::MenuItem("  Descriptor"))
                                         {
-                                            // ShellExecute(NULL, L"open", L"explorer", InfoEntry.m_Path.c_str(), NULL, SW_SHOW);
-                                            auto Str = std::format(L"explorer /select,{}", InfoEntry.m_Path);
-                                            system(xstrtool::To(Str).data());
+                                            ShowInExplorer(InfoEntry.m_Path, true);
                                         }
                                     }
 
@@ -2571,10 +2576,7 @@ namespace xresource_editor
                                                 auto pos = E.find_last_of(L"\\/") + 1;       // either slash: the compilers write '/'; older dependencies.txt files have '\'
                                                 if (ImGui::MenuItem(std::format( "###{}{}", (void*) & E, std::string_view(xstrtool::To(E).data() + pos, E.size() - pos).data()).c_str()))
                                                 {
-                                                    //ShellExecute(NULL, L"open", L"explorer", xcore::string::To<wchar_t>(xcore::string::Fmt("%s\\Assets", strXstr(O.m_pLibraryMgr->m_ProjectPath).c_str())).data(), NULL, SW_SHOW);
-                                                    auto Str = std::format(L"explorer /select,{}\\{}", m_AssetMgr.m_ProjectPath, E);
-                                                    std::ranges::replace(Str, L'/', L'\\');      // explorer takes backslashes only
-                                                    system(xstrtool::To(Str).data());
+                                                    ShowInExplorer(std::format(L"{}\\{}", m_AssetMgr.m_ProjectPath, E), true);
                                                 }
                                             }
 
@@ -2598,13 +2600,13 @@ namespace xresource_editor
                                             Str.replace(pos, 11, L"Cache\\Resources\\Logs");
                                         }
 
-                                        pos = Str.rfind(L'\\') - sizeof("desc");
-                                        Str.erase(pos);
-                                        Str.insert(pos, L".log\\Log.txt");
-
-                                        if (std::filesystem::exists(Str))
+                                        pos = Str.find_last_of(L"\\/");       // either separator: the path is spelled with '/' on Linux
+                                        if (pos != std::wstring::npos)
                                         {
-                                            system(std::format("explorer /select,{}", xstrtool::To(Str) ).c_str());
+                                            pos -= sizeof("desc");
+                                            Str.erase(pos);
+                                            Str.insert(pos, L".log\\Log.txt");
+                                            if (std::filesystem::exists(Str)) ShowInExplorer(Str, true);
                                         }
                                     }
                                 });

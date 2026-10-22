@@ -170,13 +170,13 @@ namespace xresource_editor
         }
         static void OpenFileWithDefaultApp(const std::filesystem::path& FullPath) noexcept { OpenFileWithApp(FullPath, false); }
 
-        // "Show in Explorer": the OS file manager on the file, selected (Windows), or on the folder. Where a file cannot be selected (the desktop's file manager on Linux) its folder is
-        // opened. Fire-and-forget, like opening a file; a failure is only logged. The path is passed whole and quoted: a name with spaces or commas stays one name.
+        // "Show in Explorer": the OS file manager on the file, selected, or on the folder. On Linux the shim's ShellExecute takes the same explorer.exe call to the desktop's
+        // file manager, which selects the file too where it can (xlion_linux_gui.cpp). Fire-and-forget, like opening a file; a failure is only logged. The path is passed
+        // whole and quoted: a name with spaces or commas stays one name.
         static void ShowInExplorer(const std::filesystem::path& FullPath, bool bIsFolder) noexcept
         {
             std::filesystem::path Target = FullPath;
             Target.make_preferred();
-        #if defined(_WIN32)
             INT_PTR Result = 0;
             if (bIsFolder) Result = reinterpret_cast<INT_PTR>(::ShellExecuteW(nullptr, L"open", Target.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
             else
@@ -184,10 +184,6 @@ namespace xresource_editor
                 const std::wstring Params = L"/select,\"" + Target.wstring() + L"\"";
                 Result = reinterpret_cast<INT_PTR>(::ShellExecuteW(nullptr, L"open", L"explorer.exe", Params.c_str(), nullptr, SW_SHOWNORMAL));
             }
-        #else
-            const std::filesystem::path Folder = bIsFolder ? Target : Target.parent_path();
-            const auto Result = reinterpret_cast<INT_PTR>(::ShellExecuteW(nullptr, L"open", Folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
-        #endif
             if (Result <= 32)
             {
                 std::printf("[AssetTree] Failed to show '%s' in the file manager (ShellExecuteW error %zd)\n", reinterpret_cast<const char*>(FullPath.u8string().c_str()), static_cast<std::ptrdiff_t>(Result));
