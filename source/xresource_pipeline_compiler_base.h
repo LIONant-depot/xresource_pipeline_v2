@@ -4,6 +4,8 @@
 #pragma once
 
 #include <source_location>
+#include <algorithm>
+#include <thread>
 
 namespace xresource_pipeline::compiler
 {
@@ -12,6 +14,7 @@ namespace xresource_pipeline::compiler
     // ---------------------
     // -OPTIMIZATION    O1                                  // Optional
     // -DEBUG           D1                                  // Optional
+    // -THREADS         8                                   // Optional (0 or absent: every core)
     // -TARGET          WINDOWS                             // Optional
     // -PROJECT         "C:\SomeFolder\MyProject.lion" 
     // -DESCRIPTOR      "Texture\00\faff00.desc"
@@ -70,6 +73,12 @@ namespace xresource_pipeline::compiler
                             const std::wstring_view getDestinationPath          ( xresource_pipeline::platform p )                      const   noexcept;
                             xerr                    CreatePath                  ( std::wstring_view Path )                              const   noexcept;
 
+        // The threads this compile may use (-THREADS): the editor gives a lone compile every core and each of many compiles a share. Without it: every core.
+                            int                     getThreadCount              ( void )                                                const   noexcept
+        {
+            return m_nThreads > 0 ? m_nThreads : std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+        }
+
     protected:
         
         virtual             xerr                    onCompile                   ( void )                                                                 = 0;
@@ -88,6 +97,7 @@ namespace xresource_pipeline::compiler
 
         debug_type                                              m_DebugType                 { debug_type::D0 };
         optimization_type                                       m_OptimizationType          { optimization_type::O1 };
+        int                                                     m_nThreads                  { 0 };  // -THREADS (0: every core, see getThreadCount)
         std::chrono::steady_clock::time_point                   m_Timmer                    {};
 
         project_paths                                           m_ProjectPaths              {}; // Standard path for the pipeline

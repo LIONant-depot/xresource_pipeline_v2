@@ -32,6 +32,16 @@ Arguments:
 Example:
 * -DEBUG D0
 
+## `-THREADS` number
+How many threads the compiler may use. The editor gives a single compilation every core, and gives each compiler a share when many
+compile at once (a full build). Compilers read it with `getThreadCount()`.
+
+Argument requirements:
+* This argument is optional. If not present, or `0`, the compiler uses every core.
+
+Example:
+* -THREADS 4
+
 ## `-PLATFORM` many_arguments
 Which plaforms should the compiler compile for. 
 

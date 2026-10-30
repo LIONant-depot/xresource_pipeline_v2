@@ -4829,12 +4829,25 @@ namespace xresource_editor
                     CompilerPath = CompilerExecutablePath(CompilerPath);
                 }
 
+                // The threads of this compile: the cores shared by the compiles running (this one too) and queued, never fewer than 8 - a lone
+                // compile gets every core, a full build 8 each. Measured 2026-10-31, 27 texture compiles at once on 28 cores: 1 thread each
+                // 840-877 s, 4 each 215 s, 8 each 133 s, 28 each 180-196 s (too few starves the big compiles left at the end of a batch -
+                // a compile cannot grow its threads once started; too many costs a little)
+                const int nCores   = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+                int       nBusy    = Compilation.m_Dispatched.load();
+                {
+                    xcontainer::lock::scope Lk(std::as_const(Compilation.m_Queue));
+                    for (const auto& Level : Compilation.m_Queue.get()) nBusy += static_cast<int>(Level.m_Deque.size());
+                }
+                const int nThreads = std::max(std::min(8, nCores), nCores / std::max(1, nBusy));
+
                 // Generate the command line
-                CommandLine = std::format(LR"("{}" -PROJECT "{}" -OPTIMIZATION {} -DEBUG {} -DESCRIPTOR "{}" -OUTPUT "{}\Cache\Resources\Platforms\WINDOWS")"
+                CommandLine = std::format(LR"("{}" -PROJECT "{}" -OPTIMIZATION {} -DEBUG {} -THREADS {} -DESCRIPTOR "{}" -OUTPUT "{}\Cache\Resources\Platforms\WINDOWS")"
                     , CompilerPath
                     , LibMgr.m_ProjectPath
                     , LibMgr.m_Compilation.m_Settings.getOptimizationLevelString()
                     , LibMgr.m_Compilation.m_Settings.getDebugLevelString()
+                    , nThreads
                     , DescriptorPath
                     , LibMgr.m_ProjectPath
                 );

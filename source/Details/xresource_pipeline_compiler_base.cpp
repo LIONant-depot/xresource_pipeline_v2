@@ -362,6 +362,15 @@ xerr base::InternalParse( const int argc, const char *argv[] )
         , OptiminalGroup
         );
 
+    const auto hThreads = CmdLineParser.addOption
+        ( "THREADS"
+        , "How many threads the compiler may use (the editor gives a lone compile every core,\n"
+            "   and each of many compiles a share). 0 or absent: every core"
+        , false
+        , 1
+        , OptiminalGroup
+        );
+
     const auto hTarget = CmdLineParser.addOption
         ( "TARGET"
         , "Tells which platforms should be compiling for,\n"
@@ -581,6 +590,18 @@ xerr base::InternalParse( const int argc, const char *argv[] )
                 return xerr::create_f<state, "Debug Type not supported">();
             }
         }
+    }
+
+    //
+    // Threads
+    //
+    m_nThreads = 0;
+    if (CmdLineParser.hasOption(hThreads))
+    {
+        if (auto result = CmdLineParser.getOptionArgAs<std::string>(hThreads, 0); std::holds_alternative<xerr>(result))
+            return std::get<xerr>(result);
+        else if (m_nThreads = std::atoi(std::get<std::string>(result).c_str()); m_nThreads < 0 || m_nThreads > 1024)
+            return xerr::create_f<state, "THREADS must be between 0 (every core) and 1024">();
     }
 
     //
