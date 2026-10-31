@@ -552,7 +552,7 @@ xerr base::InternalParse( const int argc, const char *argv[] )
             }
             else if (xstrtool::CompareI(Type,std::string_view("Oz")) == 0)
             {
-                m_OptimizationType = optimization_type::O1;
+                m_OptimizationType = optimization_type::Oz;     // (was O1: an Oz compile ran at the descriptor's quality, never the maximum)
             }
             else
             {
