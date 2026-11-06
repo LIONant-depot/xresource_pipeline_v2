@@ -521,6 +521,8 @@ namespace xresource_editor::commands
             const auto Name        = std::get<std::string>(NameArg);
 
             if (AssetGuid.m_Instance.empty() || AssetGuid.m_Type.empty()) return "CreateAsset: bad asset guid";
+            // (an instance guid's low bit says it is a guid, not a resource pointer: an even one was read as a pointer when the new descriptor was serialized - an assert in Debug, an access violation in Release)
+            if (AssetGuid.m_Instance.isPointer()) return "CreateAsset: the asset's instance guid must be odd (its low bit marks it as a guid, not a pointer)";
             CreateOrRestoreAsset(LibraryGuid, AssetGuid, ParentGuid, Name);
             return {};
         }
