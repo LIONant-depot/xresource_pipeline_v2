@@ -567,6 +567,27 @@ namespace xresource_editor::commands
             return xresource_editor::SaveAssets() ? "Saved" : "Nothing to save";
         }
     };
+
+    //================================================================================================
+    // EmptyTrash - what the asset browser's "Empty Trashcan" does, for the console (and the tools that
+    // delete their own test assets): every asset in the library's Trash is deleted for good. NOT undoable.
+    //================================================================================================
+    struct empty_trash_query_cmd : xundo::query_command_base
+    {
+        empty_trash_query_cmd(xundo::system& System, void* pDataBase) noexcept : xundo::query_command_base(System, "EmptyTrash", pDataBase) { RegisterArguments(); }
+        const char* getCommandHelp() const noexcept override { return "Deletes for good everything in a library's trash (what the browser's Empty Trashcan does; it can not be undone). Usage: EmptyTrash -Library hexguid"; }
+        void RegisterArguments() noexcept override { m_hLibrary = m_Parser.addOption("Library", "Library instance guid, 16 hex digits", true, 1); }
+
+        std::string Query() noexcept override
+        {
+            auto LibraryArg = m_Parser.getOptionArgAs<std::string>(m_hLibrary, 0);
+            if (std::holds_alternative<xerr>(LibraryArg)) return "EmptyTrash: bad arguments";
+            if (auto Err = xresource_editor::g_LibMgr.EmptyTrashcan(ParseLibraryGuid(std::get<std::string>(LibraryArg))); !Err.empty()) return std::format("EmptyTrash: {}", Err);
+            return "Emptied";
+        }
+
+        xcmdline::parser::handle m_hLibrary;
+    };
 }
 
 #endif // XRESOURCE_EDITOR_COMMANDS_ASSET_BROWSER_H
