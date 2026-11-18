@@ -1551,6 +1551,10 @@ namespace xresource_editor
         {
             const std::wstring Path = xstrtool::PathNormalizeCopy(std::format( L"{}/{}", FileMonitorChanges.m_LibraryDB.m_Library.m_Path, AssetsPath));
 
+            // A new project has no cache/resources/logs yet: the watcher used to fail to open it and end, so for that whole session nothing that
+            // depends on a compile log (a model on its material's template, an instance on its material's layout) was recompiled when it changed (C90)
+            { std::error_code Ec; std::filesystem::create_directories(Path, Ec); }
+
             const HANDLE dir_handle = CreateFileW
                 ( Path.c_str()
                 , FILE_LIST_DIRECTORY
