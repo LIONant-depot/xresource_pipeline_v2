@@ -428,6 +428,7 @@ namespace xresource_editor
     inline void CompilingThreadWorker(library_mgr& LibMgr, compilation::entry&& Entry);
     namespace compilation { struct instance; }
     inline bool PickReadyEntry(library_mgr& LibMgr, compilation::entry& Out, bool& bQueueEmpty) noexcept;
+    inline void RetryFailedAfterUpstream(library_mgr& LibMgr) noexcept;
 
     namespace compilation
     {
@@ -590,6 +591,7 @@ namespace xresource_editor
                         for (const auto& Level : m_Instance.m_Queue.get()) if (Level.size()) { bPending = true; break; }
                     }
                     if (bPending) m_Instance.StartCompilation();
+                    else          RetryFailedAfterUpstream(m_Instance.m_LibraryMgr);
                 }
 
                 instance& m_Instance;
@@ -732,6 +734,16 @@ namespace xresource_editor
             void TypeStarted(xresource::type_guid Type) noexcept { std::scoped_lock Lk(m_RunningMutex); ++m_RunningTypes[Type]; }
             void TypeEnded(xresource::type_guid Type) noexcept   { std::scoped_lock Lk(m_RunningMutex); if (--m_RunningTypes[Type] <= 0) m_RunningTypes.erase(Type); }
             bool IsTypeRunning(xresource::type_guid Type) noexcept { std::scoped_lock Lk(m_RunningMutex); return m_RunningTypes.contains(Type); }
+
+            // A compile that failed because what it is made from was not made yet (an anim package before its skeleton: the descriptor reads the skeleton's manifest)
+            // wrote no dependencies, so nothing brought it back (C90). Each success of a type moves a counter; a failure keeps the counter when it started, and is
+            // tried again when the queue empties if a type it runs after has had a success since (RetryFailedAfterUpstream). Once per such success: it converges
+            std::uint64_t                                       m_SuccessSeq = 0;
+            std::unordered_map<xresource::type_guid, std::uint64_t> m_LastSuccess;            // by type: m_SuccessSeq at its last success
+            std::unordered_map<xresource::full_guid, std::uint64_t> m_FailedSince;            // by failed resource: m_SuccessSeq when its compile started
+            std::uint64_t SuccessSeq() noexcept { std::scoped_lock Lk(m_RunningMutex); return m_SuccessSeq; }
+            void NoteSuccess(xresource::type_guid Type) noexcept { std::scoped_lock Lk(m_RunningMutex); m_LastSuccess[Type] = ++m_SuccessSeq; }
+            void NoteFailure(xresource::full_guid Guid, std::uint64_t StartSeq) noexcept { std::scoped_lock Lk(m_RunningMutex); m_FailedSince[Guid] = StartSeq; }
 
             void AllocateQueues( int Count )
             {
@@ -3268,7 +3280,9 @@ namespace xresource_editor
                         InfoNode.m_DescriptorTime = NoFileTime();
                         InfoNode.m_ResourceTime   = NoFileTime();
                         InfoNode.m_CancelledAt    = NoFileTime();
-                        Library->AddToCompilationQueueIfNeeded(*InfoDB, InfoNode);
+                        // Forced: with both times cleared only a resource with a newer dependency was queued - one that failed before writing its dependencies (a
+                        // failure writes none) never was, from the Recompile menu, Recompile Failed or the retry after its upstream compiled (C90)
+                        Library->AddToCompilationQueueIfNeeded(*InfoDB, InfoNode, true);
                     });
                 });
             });
@@ -4652,6 +4666,37 @@ namespace xresource_editor
         );
     }
 
+    // The queue is empty: the failures that started before a type they run after had a success are tried again (see compilation::instance::m_FailedSince)
+    inline void RetryFailedAfterUpstream(library_mgr& LibMgr) noexcept
+    {
+        auto& C = LibMgr.m_Compilation;
+        std::vector<xresource::full_guid> Retry;
+        {
+            std::scoped_lock Lk(C.m_RunningMutex);
+            for (auto It = C.m_FailedSince.begin(); It != C.m_FailedSince.end(); )
+            {
+                bool bUpstream = false;
+                for (const auto& T : RunsAfterClosure(LibMgr, It->first.m_Type))
+                    if (auto L = C.m_LastSuccess.find(T); L != C.m_LastSuccess.end() && L->second > It->second) { bUpstream = true; break; }
+                if (bUpstream) { Retry.push_back(It->first); It = C.m_FailedSince.erase(It); }
+                else ++It;
+            }
+        }
+        for (const auto& G : Retry)
+        {
+            library::guid Lib{};
+            {
+                std::scoped_lock Lk(C.m_Failed.m_Mutex);
+                auto F = C.m_Failed.m_Map.find(G);
+                if (F == C.m_Failed.m_Map.end()) continue;      // (already tried again, or edited since)
+                Lib = F->second.m_Entry.m_gLibrary;
+                C.m_Failed.m_Map.erase(F);
+            }
+            printf("[CompileQueue] retry %016llX: it failed before a resource it is made from was compiled\n", static_cast<unsigned long long>(G.m_Instance.m_Value));
+            LibMgr.RecompileResource(Lib, G);
+        }
+    }
+
     inline void CompilingThreadWorker( library_mgr& LibMgr, compilation::entry&& Entry )
     {
         auto& Compilation = LibMgr.m_Compilation;
@@ -4674,6 +4719,7 @@ namespace xresource_editor
 
         compilation::historical_entry   NewEntry;
         std::wstring                    DescriptorPath;
+        const std::uint64_t             StartSeq = Compilation.SuccessSeq();      // (RetryFailedAfterUpstream)
         {
             NewEntry.m_Entry  = std::move(Entry);
             // The log was made with the order, when the resource was queued: an editor may already hold it (and may have asked for it to be cancelled)
@@ -4937,6 +4983,8 @@ namespace xresource_editor
                     std::scoped_lock lock(Compilation.m_Failed.m_Mutex);
                     Compilation.m_Failed.m_Map[NewEntry.m_Entry.m_FullGuid] = NewEntry;
                 }
+                if (Result == compilation::historical_entry::result::FAILURE) Compilation.NoteFailure(NewEntry.m_Entry.m_FullGuid, StartSeq);
+                else if (Result != compilation::historical_entry::result::CANCELLED) Compilation.NoteSuccess(NewEntry.m_Entry.m_FullGuid.m_Type);
 
                 // move the NewEntry into the historical list
                 {
