@@ -5157,6 +5157,18 @@ namespace xresource_editor
 
                                         // Set the new dependencies
                                         Node.m_Dependencies = std::move(Dependencies);
+
+                                        // A file it depends on that changed while it compiled (Bistro's 30 min compile: its materials' templates were written meanwhile) was
+                                        // registered only now, after the change: nothing cascaded, and it kept what it read at the start (no Material Instances, C90). Its
+                                        // time is taken here, so the check below compiles it again. (Not the files in its own log folder: those it writes itself)
+                                        const std::wstring OwnLog = AssetPathKey(std::format(L"Cache/Resources/Logs/{}.log/", ResourceSubPath));
+                                        for (const auto& E : Node.m_Dependencies.m_Assets)
+                                        {
+                                            if (AssetPathKey(E).starts_with(OwnLog)) continue;
+                                            std::error_code TimeEc;
+                                            const auto T = std::filesystem::last_write_time(std::format(L"{}/{}", LibraryDB->m_Library.m_Path, ResolveAssetPath(LibraryDB->m_Library.m_Path, E)), TimeEc);
+                                            if (!TimeEc && T > Node.m_CompileStarted) Node.m_NewestDependencyTime = std::max(Node.m_NewestDependencyTime, T);
+                                        }
                                     }
                                 }
 
@@ -5193,9 +5205,10 @@ namespace xresource_editor
                                         if (G != Node.m_Info.m_Guid) VirtualChainList.push_back(G);
 
                                 //
-                                // Check and see if this entry needs to be recompile for some reason...
+                                // Check and see if this entry needs to be recompile for some reason... (forced when something it is made from changed while it compiled:
+                                // its output is newer than that change, so the times alone would call it up to date)
                                 //
-                                if ( LibraryDB->AddToCompilationQueueIfNeeded(*InfoDB, Node) == false )
+                                if ( LibraryDB->AddToCompilationQueueIfNeeded(*InfoDB, Node, Node.m_NewestDependencyTime > Node.m_CompileStarted) == false )
                                 {
                                     LibMgr.m_OnCompilationState.NotifyAll( LibMgr, LibraryDB->m_Library.m_GUID, Node.m_Info.m_Guid, NewEntry.m_Log);
                                 }
