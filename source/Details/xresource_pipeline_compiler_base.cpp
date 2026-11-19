@@ -790,7 +790,11 @@ xerr base::Compile( void ) noexcept
         // Do the actual compilation
         //
         if( auto Err = onCompile(); Err )
+        {
+            // Why it failed goes in the log (the editor's problems and Log.txt read it): each compiler's main printing it was not enough (C90: lady failed with no message)
+            Err.ForEachInChain([&](xerr E) { LogMessage(msg_type::ERROR, std::format("{}{}{}", E.getMessage(), E.getHint().empty() ? "" : " - ", E.getHint())); });
             return Err;
+        }
 
         //
         // Save the dependency file
